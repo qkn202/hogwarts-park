@@ -40,13 +40,13 @@ const routes = [
   ['ice','bowling','steps','gap','icewind','bridge','bounce','conveyor','rotor','wind','bouncegap','finale'],
   ['bounce','steps','wind','gap','rotor','ice','bridge','bouncegap','bowling','conveyor','icewind','finale'],
   ['wind','pumpkin','gap','steps','icewind','bridge','bouncegap','rotor','conveyor','pumpkin','bowling','finale'],
-  ['steps','bridge','gap','rotor','conveyor','bouncegap','wind','ice','bounce','pumpkin','icewind','finale'],
+  ['wall','bridge','gap','rotor','conveyor','bouncegap','wind','ice','bounce','pumpkin','icewind','finale'],
   ['bowling','ice','gap','steps','pumpkin','wind','bridge','rotor','bouncegap','conveyor','icewind','finale'],
-  ['rotor','steps','gap','bridge','bowling','ice','bouncegap','wind','conveyor','pumpkin','icewind','finale'],
+  ['rotor','wall','gap','bridge','bowling','ice','bouncegap','wind','conveyor','pumpkin','icewind','finale'],
   ['gap','wind','ice','steps','bowling','bridge','bouncegap','rotor','conveyor','bounce','icewind','finale']
 ];
 
-const stopNames = {steps:'NÚI KHỔNG LỒ!', pumpkin:'Bí ngô thích ôm', gap:'Kéo bạn qua vực', bounce:'Cả hội thành tên lửa', wind:'Tai dài bắt gió', bridge:'Cầu nghiêng', bowling:'Gia tinh bowling', ice:'Ai bôi bơ lên sàn?', icewind:'Trượt rồi bay luôn', rotor:'Cửa xoay KHÔNG XUYÊN!', bouncegap:'Boing qua vực', conveyor:'Băng chuyền đổi chiều', finale:'Vớ ở cuối đường!'};
+const stopNames = {steps:'NÚI KHỔNG LỒ!', wall:'VÁCH TƯỜNG CAO · CẦN 3 NGƯỜI CHỒNG THÁP!', pumpkin:'Bí ngô thích ôm', gap:'Kéo bạn qua vực', bounce:'Cả hội thành tên lửa', wind:'Tai dài bắt gió', bridge:'Cầu nghiêng', bowling:'Gia tinh bowling', ice:'Ai bôi bơ lên sàn?', icewind:'Trượt rồi bay luôn', rotor:'Cửa xoay KHÔNG XUYÊN!', bouncegap:'Boing qua vực', conveyor:'Băng chuyền đổi chiều', finale:'Vớ ở cuối đường!'};
 
 const chapterNames = [
   ['Đỉnh núi chót vót','Bí ngô giành ghế','Thảm bị thủng!','Ghế sofa BOING','Ống khói hắt hơi','Cầu bàn trà nghiêng','Bơ đổ trên thảm','Cánh quạt trần quay','Băng chuyền dọn dẹp','Vực sâu sàn gỗ','Bí ngô đánh bowling','Vớ sau lò sưởi'],
@@ -97,10 +97,33 @@ levels.forEach((lv, idx) => {
       lv.platforms.push([mx + numSteps * 18, peakY, 38, 18]);
       lv.fans.push([mx + 80, peakY + 60, 250, 1.5]);
       const ax = mx + numSteps * 18 + 80;
+      if (!lv.mountains) lv.mountains = [];
+      lv.mountains.push([mx - 40, ax + 40]);
       gap(ax + 40, ax + 650);
       const cs = ax + 650 + 60;
       for (let c = 0; c < 5; c++) lv.crumbling.push([cs + c * 130, 520 - c * 25, 50, 18]);
       lv.platforms.push([cs + 650, 400, 55, 18], [cs + 750, 350, 55, 18], [cs + 870, 400, 55, 18], [cs + 990, 450, 55, 18]);
+    }
+
+    if (kind === 'wall') {
+      // 3-Player Human Tower Bastion Wall (Height 140px, top at y=430)
+      const wall1X = x + 360, wall1Y = 430, wall1W = 55, wall1H = 140;
+      lv.platforms.push([wall1X, wall1Y, wall1W, wall1H]);
+      lv.platforms.push([wall1X + wall1W + 40, 485, 55, 18]);
+
+      // Massive abyss gap right after the wall (580px wide)
+      gap(x + 580, x + 1160);
+      // Floating stepping stones across the abyss
+      lv.platforms.push([x + 660, 520, 45, 18], [x + 790, 460, 45, 18], [x + 920, 520, 45, 18]);
+
+      // Wall 2: Second Bastion Wall before the checkpoint
+      const wall2X = x + 1280, wall2Y = 430, wall2W = 55, wall2H = 140;
+      lv.platforms.push([wall2X, wall2Y, wall2W, wall2H]);
+      lv.platforms.push([wall2X + wall2W + 40, 485, 55, 18]);
+
+      if (!lv.walls) lv.walls = [];
+      lv.walls.push({ x: wall1X, y: wall1Y, w: wall1W, h: wall1H });
+      lv.walls.push({ x: wall2X, y: wall2Y, w: wall2W, h: wall2H });
     }
 
     if (kind === 'pumpkin' || kind === 'bowling') {
@@ -268,6 +291,11 @@ function solidsFor(room) {
   for (const [x, y, w] of lv.seesaws) {
     s.push({ x, y, w, h: 16, slope: Math.sin(room.ticks / 75 + (room.variant || 0) + x) * 0.2 });
   }
+  if (lv.walls && room && room.players && room.players.length < 3) {
+    for (const w of lv.walls) {
+      s.push({ x: w.x - 70, y: 505, w: 45, h: 65, helper: true });
+    }
+  }
   if (lv.crumbling && room.crumblingPlatforms) {
     lv.crumbling.forEach((c, idx) => {
       const st = room.crumblingPlatforms[idx];
@@ -285,8 +313,9 @@ function top(b, p) {
   return b.y + (b.slope || 0) * (p.x + PW / 2 - b.x - b.w / 2);
 }
 
-function isOnMountain(p) {
-  return p.y > HARD.mountainPeakY && p.y < 570 - 50;
+function isOnMountain(p, lv) {
+  if (!lv || !lv.mountains) return false;
+  return lv.mountains.some(([x1, x2]) => p.x >= x1 && p.x <= x2) && p.y > HARD.mountainPeakY && p.y < 570 - 50;
 }
 
 function tick(room) {
@@ -342,7 +371,7 @@ function tick(room) {
     p.tossCooldown = Math.max(0, p.tossCooldown - 1);
     p.bumpCooldown = Math.max(0, (p.bumpCooldown || 0) - 1);
 
-    p.onMountain = isOnMountain(p);
+    p.onMountain = isOnMountain(p, lv);
 
     if (p.ground && Math.abs(p.y - (p.lastY || p.y)) < 0.1) {
       p.standingTicks++;
@@ -392,12 +421,11 @@ function tick(room) {
 
     p.coyote = p.ground ? 4 : Math.max(0, (p.coyote || 0) - 1);
 
-    if (keys.jump && !p.jumpHeld && (p.ground || p.coyote || p.dangling)) {
-      p.vy = p.dangling ? -11 : Math.abs(HARD.jumpPower * (p.onMountain ? 0.75 : 1));
+    if (keys.jump && !p.jumpHeld && ((p.ground || p.coyote) && !p.dangling)) {
+      p.vy = -Math.abs(HARD.jumpPower * (p.onMountain ? 0.75 : 1));
       p.ground = false;
       p.coyote = 0;
       p.standingTicks = 0;
-      if (p.dangling) p.kickX = (p.kickX || 0) * 1.2 + p.facing * 3;
     }
     p.jumpHeld = !!keys.jump;
 
@@ -589,6 +617,29 @@ function tick(room) {
       }
     } else {
       q.hauling = false;
+    }
+  }
+
+  // Calculate player stack heights (1, 2, 3+ tiers)
+  ps.forEach(p => {
+    p.stackHeight = 1;
+    p.stackedOn = null;
+  });
+  for (const p of ps) {
+    if (p.dead > 0) continue;
+    for (const q of ps) {
+      if (q === p || q.dead > 0) continue;
+      if (Math.abs(p.y + PH - q.y) <= 6 && p.x + PW > q.x + 3 && p.x < q.x + PW - 3) {
+        p.stackedOn = q;
+        break;
+      }
+    }
+  }
+  for (let iter = 0; iter < 4; iter++) {
+    for (const p of ps) {
+      if (p.stackedOn) {
+        p.stackHeight = (p.stackedOn.stackHeight || 1) + 1;
+      }
     }
   }
 

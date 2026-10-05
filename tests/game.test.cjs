@@ -165,3 +165,50 @@ test('maps have wide gaps',()=>{
  const l=E.levels[0];
  assert.ok(l.width>20000);
 });
+
+// Test 16: Rotor collision
+test('rotor collision works',()=>{
+ const result=E.checkRotorCollision(100,100,30,44,200,200,80,0);
+ assert.ok(typeof result.hit==='boolean');
+});
+
+// Test 17: Scoring works
+test('scoring works',()=>{
+ const r=room();
+ const s=E.scoring(r);
+ assert.ok(typeof s.total==='number');
+});
+
+// Test 18: 3-Player Human Tower Bastion Wall
+test('3-player tower bastion wall requires 3-player stack',()=>{
+ const lv=E.levels[4];
+ assert.ok(lv.walls && lv.walls.length>0);
+ const wall=lv.walls[0];
+ assert.equal(wall.h, 140);
+ assert.equal(wall.y, 430);
+
+ function testStack(count){
+  const r={code:'TEST',level:4,host:'p0',players:Array.from({length:count},(_,i)=>({id:'p'+i,house:i,connected:true})),deaths:0};
+  E.init(r);
+  for(let i=0;i<count;i++){
+   r.players[i].x=wall.x-30;
+   r.players[i].y=526-i*44;
+   r.players[i].ground=true;
+  }
+  const topP=r.players[count-1];
+  topP.keys={right:true,jump:true};
+  let landed=false;
+  for(let t=0;t<25;t++){
+   E.tick(r);
+   topP.keys={right:true};
+   if(topP.ground && topP.y===wall.y-44 && topP.x>=wall.x && topP.x<=wall.x+wall.w){
+    landed=true;break;
+   }
+  }
+  return landed;
+ }
+
+ assert.equal(testStack(1), false, '1 player alone cannot jump over 140px wall');
+ assert.equal(testStack(2), false, '2 players stacked cannot jump over 140px wall');
+ assert.equal(testStack(3), true, '3 players stacked cleanly land on top of 140px wall');
+});

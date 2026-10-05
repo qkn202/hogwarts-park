@@ -1004,6 +1004,36 @@ function elf(p,t,demo=false){
     ctx.font='bold 11px Arial, sans-serif';
     ctx.textAlign='center';
     ctx.fillText('GỒNG! 💪',0,by+14);
+  }else if(p.stackHeight >= 3){
+    const by=-66+Math.sin(t*14)*2;
+    ctx.fillStyle='#ffd700';
+    ctx.strokeStyle='#8b6914';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(-42,by,84,19,6);
+    else ctx.rect(-42,by,84,19);
+    ctx.fill();ctx.stroke();
+    poly([[-4,by+19],[4,by+19],[0,by+25]],'#ffd700');
+    line(-4,by+19,0,by+25,'#8b6914',1.8);
+    line(4,by+19,0,by+25,'#8b6914',1.8);
+    ctx.fillStyle='#3d2700';
+    ctx.font='bold 11px Arial, sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('🌟 3 TẦNG! LÊN! 🚀',0,by+14);
+  }else if(p.stackHeight === 2){
+    const by=-66+Math.sin(t*14)*2;
+    ctx.fillStyle='#98fb98';
+    ctx.strokeStyle='#2e8b57';
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(-36,by,72,18,5);
+    else ctx.rect(-36,by,72,18);
+    ctx.fill();ctx.stroke();
+    poly([[-4,by+18],[4,by+18],[0,by+23]],'#98fb98');
+    ctx.fillStyle='#004d20';
+    ctx.font='bold 10px Arial, sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('🪜 2/3 TẦNG',0,by+13);
   }
 
   // Local Player Indicator & Name Tag
@@ -1074,6 +1104,22 @@ function platform(x,y,w,h,moving=false){
     for(let rx=x+15;rx<x+w-10;rx+=26){
       ctx.strokeRect(rx,y+10,8,8);
     }
+  }
+
+  // High Bastion Wall (3-Player Human Tower)
+  if(h >= 120){
+    for(let cx = x; cx < x + w - 8; cx += 22){
+      rect(cx, y - 6, 14, 6, '#435848');
+      rect(cx + 2, y - 8, 10, 2, '#7a936a');
+    }
+    ctx.save();
+    ctx.fillStyle = '#edd4a0';
+    ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('▲ CHỒNG 3 TẦNG ▲', x + w / 2, y + 36);
+    ctx.fillStyle = 'rgba(215, 235, 220, 0.45)';
+    ctx.fillText('HOGWARTS WALL', x + w / 2, y + 52);
+    ctx.restore();
   }
 }
 

@@ -115,6 +115,30 @@
 - **Cánh quạt 4 lưỡi (Rotor Blades):** Kiểm tra khoảng cách đoạn thẳng từ tâm tới 4 đầu mút cánh quạt (`pointToSegmentDistance`), chặn đứng hoàn toàn lỗi đi xuyên qua cánh quạt và đẩy người chơi văng ra theo vector pháp tuyến.
 - **Xếp chồng vai (Player Stacking Collision):** Tự động phát hiện bề mặt vai người đứng dưới, khóa chân người đứng trên không cho rơi xuyên thấu nhau.
 
+### 6. Vách tường cao cần 3 người chồng tháp (3-Player Human Tower Bastion Wall)
+
+```
+                     [P3]  ← Gia tinh 3 (Đỉnh tháp): Bật nhảy đạt y=386, đáp lên đỉnh tường!
+                      ||
+                     [P2]  ← Gia tinh 2 (Tầng giữa): Đứng trên vai P1 (y=482)
+                      ||    
+            [SÀN]    [P1]  ← Gia tinh 1 (Đế móng): Trụ vững trên sàn (y=526)
+             570      ||   ===========================
+            ============== |  🏰 VÁCH TƯỜNG CAO 140px  |  (Đỉnh tường y=430)
+                           |  (3-PLAYER TOWER WALL)  |
+```
+
+- **Chiều cao thử thách:** Vách tường đá nguyên khối thẳng đứng cao **140px** (từ sàn lâu đài `y = 570` lên tới đỉnh tường `y = 430`).
+- **Phân tích vật lý & toán học bắt buộc 3 người:**
+  - **1 người đơn độc:** Lực nhảy tối đa đạt độ cao delta `70.2px` (chân chạm đỉnh tại `y = 499.8px`), thiếu tới **69.8px** → Đập mặt vào tường rơi xuống.
+  - **2 người chồng 2 tầng:** Gia tinh 2 nhảy từ vai gia tinh 1 đạt độ cao `y = 455.8px`, thiếu **25.8px** → Không thể chạm tới mép tường.
+  - **3 người chồng 3 tầng:** Gia tinh 3 đứng trên vai gia tinh 2 (đầu tại `y = 438px`), khi bật nhảy chân vươn lên tới `y = 411.8px` (cao hơn đỉnh tường `18.2px`), đáp ngọt ngào lên mặt tường thành!
+- **Kỹ thuật kéo đồng đội qua tường (Anchor & Hauling):**
+  - Gia tinh 3 đáp lên tường giữ phím **`S` / `↓`** (Mỏ neo Anchor) cố định vị trí.
+  - Dây thừng căng kéo gia tinh 2 và gia tinh 1 lên mặt tường lần lượt, hoặc gia tinh 3 nhảy xuống bờ bên kia làm đối trọng ròng rọc kéo 2 bạn vượt tường!
+- **Hệ thống thích ứng thông minh (2-Player Room Adaptation):**
+  - Khi phòng chơi có 2 người, hệ thống tự động triệu hồi bệ đá phù thủy phụ trợ (`y = 505`) để 2 người vẫn có thể vượt qua mà không bị kẹt màn. Khi có từ 3 người chơi trở lên, bệ đá chìm xuống hoàn toàn, bắt buộc phải phối hợp chồng tháp 3 tầng!
+
 ---
 
 ## 🏰 Danh sách 8 Màn chơi (8 Hogwarts Chapters)
@@ -125,9 +149,9 @@
 | **2** | **Đại Sảnh Đường** *(Great Hall)* | Bàn tiệc 4 nhà dài bất tận | Sàn bơ trơn trượt, bàn tiệc bập bênh, bí ngô bowling lăn dồn dập |
 | **3** | **Lớp học Bùa chú** *(Charms)* | Giá sách phù thủy cao chót vót | Tháp sách đỉnh cao y=270, đệm lò xo bật tung, cuộn giấy băng chuyền |
 | **4** | **Nhà kính Thảo dược** *(Greenhouse)* | Vườn cây ma thuật của cô Sprout | Quạt thông gió giật mạnh, mương tưới cây rêu trơn, nấm nổ tung người |
-| **5** | **Cầu thang Hogwarts** *(Grand Staircase)* | Cầu thang dịch chuyển kỳ bí | Bậc thang chuyển dịch, cầu thang lắc lư bập bênh, hào sâu thăm thẳm |
+| **5** | **Cầu thang Hogwarts** *(Grand Staircase)* | Cầu thang dịch chuyển kỳ bí | **Vách tường 3 tầng chồng vai (140px)**, bậc thang chuyển dịch, cầu thang bập bênh |
 | **6** | **Nhà bếp gia tinh** *(Hogwarts Kitchen)* | Thiên đường ẩm thực của Dobby | Bơ đổ không phanh, nồi bí ngô đuổi đầu bếp, băng chuyền rửa chén |
-| **7** | **Phòng Chứa Bí Mật** *(Chamber of Secrets)* | Hầm ngầm cổ kính của Salazar Slytherin | Cánh quạt trần 4 lưỡi xoay tròn, tượng rắn xếp tầng, gió lạnh rít |
+| **7** | **Phòng Chứa Bí Mật** *(Chamber of Secrets)* | Hầm ngầm cổ kính của Salazar Slytherin | **Vách tường tượng đá xếp tầng (140px)**, cánh quạt trần 4 lưỡi xoay tròn |
 | **8** | **Sân lâu đài Hogwarts** *(Courtyard)* | Sân vườn lâu đài dưới ánh trăng | **Tổng hợp bẫy:** Bão tuyết, bơ trượt, quạt trần, lò xo nảy qua hào sâu |
 
 ---
