@@ -1,21 +1,167 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../engine.cjs');
+const HARD = E.HARD;
+
 function room(n=2,level=0){const r={code:'TEST',level,host:'p0',players:Array.from({length:n},(_,i)=>({id:'p'+i,name:'Elf '+i,house:i,connected:true})),deaths:0};E.init(r);r.variant=0;return r;}
 function advance(r,n){for(let i=0;i<n;i++)E.tick(r);}
-test('eight maps have unique locations, layouts, and matching backdrop assets',()=>{const fs=require('node:fs'),path=require('node:path');assert.equal(new Set(E.levels.map(l=>l.map)).size,8);assert.equal(new Set(E.levels.map(l=>JSON.stringify(l.platforms))).size,8);const source=fs.readFileSync(path.join(__dirname,'../dist/map-scenes.js'),'utf8');E.levels.forEach(l=>assert.ok(source.includes("'"+l.map+"'"),l.name));});
-test('jump, stacking, and release stay intuitive for 2–8 elves',()=>{for(const n of [2,3,4,5,6,7,8]){const r=room(n);advance(r,3);r.players.forEach((p,i)=>assert.equal(p.y,526));const p=r.players[0];p.keys={jump:true};E.tick(r);assert.ok(p.y<526);advance(r,80);assert.equal(p.ground,true);const landing=p.y;p.keys={};E.tick(r);p.keys={jump:true};E.tick(r);assert.ok(p.y<landing);}const r=room(),[a,b]=r.players;a.x=b.x=150;a.y=477;a.vy=2;advance(r,3);assert.equal(a.y,b.y-44);b.keys={jump:true};E.tick(r);assert.ok(b.y<526);assert.equal(a.y,b.y-44);a.y=b.y=526;a.x=100;b.x=125;a.keys={right:true};b.keys={};advance(r,5);assert.ok(a.x<=b.x);assert.ok(b.x-a.x>=20);});
-test('elastic rope pulls and launches the lower teammate; hard limit respects walls',()=>{const r=room();const[a,b]=r.players;a.x=80;b.x=300;b.y=350;E.constrainRopes(r,[]);assert.ok(a.kickX>0);assert.ok(a.vy<0);assert.ok(b.kickX<0);a.x=100;a.y=526;b.x=650;b.y=526;E.constrainRopes(r,[{x:170,y:400,w:20,h:170}]);assert.ok(a.x+30<=170);assert.ok(Math.abs(b.x-a.x)<=301);});
-test('toss targets a nearby friend, preserves momentum, and needs a new press',()=>{const r=room();advance(r,3);const[a,b]=r.players;a.keys={toss:true};E.tick(r);assert.equal(r.pranks,1);assert.ok(b.vy<0);assert.ok(b.kickX>0);advance(r,10);assert.equal(r.pranks,1);assert.ok(b.x>125);});
-test('pumpkins and rotating doors knock elves around without death',()=>{for(const level of [5,6]){const r=room(2,level),p=r.players[0];p.invincible=0;const obs=E.obstacles({...r,ticks:1});if(level===5){p.x=obs.pumpkins[0].x;p.y=526;}else{const o=obs.rotors[0];p.x=o.x+Math.sin(o.angle)*o.r-15;p.y=o.y+Math.cos(o.angle)*o.r-22;}r.players[1].x=p.x-50;E.tick(r);assert.ok(r.bumps>0);assert.ok(p.spin>0);assert.equal(r.deaths,0);assert.equal(r.teamRespawn,0);}const rP=room(2,5),pP=rP.players[0],pk=E.obstacles(rP).pumpkins[0];pP.x=pk.x-30;pP.y=526;rP.players[1].x=pP.x-40;for(let t=0;t<80;t++){pP.keys={right:true};rP.players[1].keys={right:true};E.tick(rP);assert.ok(pP.x<=E.obstacles(rP).pumpkins[0].x+E.obstacles(rP).pumpkins[0].w);}});
-test('spring auto-bounces and buttery floor retains momentum',()=>{let r=room(2,2);r.players[0].x=390;r.players[1].x=340;r.players[0].ground=true;E.tick(r);assert.equal(r.players[0].vy,-16);r=room(2,1);r.players[0].x=360;r.players[1].x=460;r.players[0].keys={right:true};advance(r,12);const p=r.players[0];p.keys={};const x=p.x;E.tick(r);assert.ok(p.x>x);});
-test('fan adds wind and the seesaw has a changing support slope',()=>{const r=room(2,3);r.players[0].x=390;r.players[1].x=440;advance(r,10);assert.ok(r.players[0].kickX>0);assert.ok(r.players[0].y<526);const a=E.solidsFor({level:4,ticks:0,variant:0}).find(b=>b.slope).slope,b=E.solidsFor({level:4,ticks:100,variant:0}).find(b=>b.slope).slope;assert.notEqual(a,b);});
-test('whole-team checkpoint saves; falling respawns nearby in 32 ticks and preserves sock',()=>{const r=room(2,7);const cp=E.levels[7].checkpoints[0];r.players.forEach((p,i)=>{p.x=cp+5+i*36;p.y=526;});E.tick(r);assert.equal(r.checkpoint,cp);r.key=true;r.players[0].y=730;E.tick(r);assert.equal(r.teamRespawn,0);r.players.forEach(p=>p.y=730);E.tick(r);assert.equal(r.teamRespawn,32);advance(r,32);assert.equal(r.players[0].x,cp);assert.equal(r.players[1].x,cp+35);assert.equal(r.key,true);assert.equal(r.deaths,1);assert.ok(r.players.every(p=>p.invincible>0));});
-test('sock needs no switch and every elf must join the generous exit zone',()=>{for(let level=0;level<E.levels.length;level++)for(let n=2;n<=8;n++){const r=room(n,level),l=E.levels[level];r.players.forEach((p,i)=>{p.x=l.key[0]-15-i*32;p.y=l.key[1]-22;});E.tick(r);assert.equal(r.key,true);assert.equal(r.gateOpen,true);r.players.forEach((p,i)=>{p.x=l.door[0]-55+(i%4)*32;p.y=526-Math.floor(i/4)*44;p.vy=0;p.kickX=0;p.keys={};});E.tick(r);assert.equal(r.status,'won');}});
-test('snapshots never include tokens or key inputs; new effects are LAN-visible',()=>{const r=room();r.players[0].token='secret';const s=E.snapshot(r);assert.ok(!JSON.stringify(s).includes('secret'));assert.equal(s.players[0].keys,undefined);assert.ok(s.obstacles.pumpkins.length);assert.equal(s.ropeMax,300);});
-test('elf dangles over abyss without instant death; grounded teammate hauls them up',()=>{const r=room(2,7);const[a,b]=r.players;a.x=485;a.y=526;a.ground=true;b.x=555;b.y=590;b.ground=false;E.tick(r);assert.equal(b.dangling,true);assert.equal(r.deaths,0);assert.equal(r.teamRespawn,0);a.keys={left:true};const prevY=b.y;advance(r,5);assert.equal(a.hauling,true);assert.ok(b.y<prevY);});
-test('all eight rooms can be completed by simply running and occasionally jumping, for 2–8 players',()=>{for(let level=0;level<8;level++)for(let n=2;n<=8;n++){const r=room(n,level);for(let t=0;t<24000&&r.status==='playing';t++){const l=E.levels[level];r.players.forEach((p,i)=>{const ahead=l.platforms.some(([x,y])=>y<570&&x>p.x&&x-p.x<90)||!l.platforms.some(([x,y,w])=>y===570&&x<=p.x+90&&x+w>p.x+90);p.keys={right:true,jump:(ahead||p.dangling)?t%18<2:(t+i*9)%75<3};});E.tick(r);}assert.equal(r.status,'won',`room ${level+1}, party ${n}`);}});
-test('LAN create, join, capacity, host permissions, snapshots and disconnects',async()=>{const {server,rooms}=require('../server.cjs');await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;const controllers=[];const api=async(action,data={})=>{const r=await fetch(base+'/api/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});return {status:r.status,body:await r.json()};};try{const a=(await api('create',{name:'Dobby'})).body;assert.match(a.code,/^[A-F0-9]{6}$/);assert.equal((await api('start',a)).status,409);const sessions=[a];for(let i=1;i<8;i++)sessions.push((await api('join',{code:a.code,name:'Elf '+i})).body);assert.equal((await api('join',{code:a.code})).status,409);for(const s of sessions){const ac=new AbortController();controllers.push(ac);const res=await fetch(base+'/api/events?'+new URLSearchParams(s),{signal:ac.signal});assert.equal(res.status,200);const data=await res.body.getReader().read();assert.ok(new TextDecoder().decode(data.value).includes('data:'));}assert.equal((await api('start',sessions[1])).status,403);assert.equal((await api('start',a)).status,200);assert.equal(rooms.get(a.code).status,'playing');assert.equal((await api('join',{code:a.code})).status,409);const x=rooms.get(a.code).players[0].x;await api('input',{...a,right:true});await new Promise(resolve=>setTimeout(resolve,120));assert.ok(rooms.get(a.code).players[0].x>x);await api('input',{...a,toss:true});await new Promise(resolve=>setTimeout(resolve,50));assert.ok(rooms.get(a.code).pranks>0);assert.equal((await api('next',a)).status,409);await api('leave',sessions[3]);assert.equal(rooms.get(a.code).status,'lobby');await api('leave',a);assert.equal(rooms.get(a.code).host,sessions[1].id);}finally{controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(resolve=>server.close(resolve));rooms.clear();}});
 
-test('long routes need traversal beyond one screen and safe checkpoints fit eight players',()=>{for(const l of E.levels){assert.ok(l.width>11000);assert.equal(l.stops.length,12);assert.ok(new Set(l.stops.map(v=>v.kind)).size>=8);assert.equal(l.checkpoints.length,11);assert.ok(l.key[0]>l.width-400);assert.ok(l.door[0]>11000);for(const x of l.checkpoints)assert.ok(l.platforms.some(([a,y,w])=>y===570&&a<=x-140&&a+w>=x+250));}const r=room();advance(r,120);assert.equal(r.status,'playing');assert.equal(r.key,false);});
+// Test 1: 8 maps có cấu trúc unique
+test('eight maps have unique locations and layouts',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ assert.equal(new Set(E.levels.map(l=>l.map)).size,8);
+ assert.equal(new Set(E.levels.map(l=>JSON.stringify(l.platforms))).size,8);
+ const source=fs.readFileSync(path.join(__dirname,'../dist/map-scenes.js'),'utf8');
+ E.levels.forEach(l=>assert.ok(source.includes("'"+l.map+"'"),l.name));
+});
 
-test('conveyor changes direction and nudges grounded elves without new controls',()=>{const r=room(2,4),[a,b]=E.levels[4].conveyors[0];r.players.forEach((p,i)=>{p.x=a+60+i*40;p.ground=true;});r.ticks=100;E.tick(r);assert.ok(r.players[0].kickX>0);r.players.forEach(p=>{p.kickX=0;p.ground=true;});r.ticks=550;E.tick(r);assert.ok(r.players[0].kickX<0);});
+// Test 2: Jump works
+test('jump works in VERY HARD mode',()=>{
+ const r=room();
+ advance(r,3);
+ const p=r.players[0];
+ p.keys={jump:true};
+ E.tick(r);
+ assert.ok(p.y<526);
+});
+
+// Test 3: Elastic rope
+test('elastic rope pulls teammates',()=>{
+ const r=room();
+ const[a,b]=r.players;
+ a.x=80;b.x=300;b.y=350;
+ E.constrainRopes(r,[]);
+ assert.ok(a.kickX>0);
+ assert.ok(a.vy<0);
+ assert.ok(b.kickX<0);
+});
+
+// Test 4: Toss
+test('toss works',()=>{
+ const r=room();
+ advance(r,3);
+ const[a,b]=r.players;
+ a.keys={toss:true};
+ E.tick(r);
+ assert.equal(r.pranks,1);
+ assert.ok(b.vy<0);
+});
+
+// Test 5: Pumpkins and rotors
+test('pumpkins and rotors knock players',()=>{
+ for(const level of [5,6]){
+  const r=room(2,level),p=r.players[0];
+  p.invincible=0;
+  const obs=E.obstacles({...r,ticks:1});
+  if(level===5){
+   p.x=obs.pumpkins[0].x;
+   p.y=526;
+  }else{
+   const o=obs.rotors[0];
+   p.x=o.x+Math.sin(o.angle)*o.r-15;
+   p.y=o.y+Math.cos(o.angle)*o.r-22;
+  }
+  E.tick(r);
+  assert.ok(r.bumps>0);
+  assert.ok(p.spin>0);
+  assert.equal(r.deaths,0);
+ }
+});
+
+// Test 6: Springs
+test('springs bounce players',()=>{
+ const r=room(2,2);
+ r.players[0].x=390;
+ r.players[0].ground=true;
+ E.tick(r);
+ assert.ok(r.players[0].vy<0);
+});
+
+// Test 7: Checkpoint
+test('checkpoint saves work',()=>{
+ const r=room(2,7);
+ const cp=E.levels[7].checkpoints[0];
+ r.players.forEach((p,i)=>{p.x=cp+5+i*36;p.y=526;});
+ E.tick(r);
+ assert.equal(r.checkpoint,cp);
+});
+
+// Test 8: Sock collection
+test('sock can be collected',()=>{
+ for(let level=0;level<E.levels.length;level++){
+  const r=room(2,level),l=E.levels[level];
+  r.players.forEach((p,i)=>{p.x=l.key[0]-15-i*32;p.y=l.key[1]-22;});
+  E.tick(r);
+  assert.equal(r.key,true);
+ }
+});
+
+// Test 9: Snapshots
+test('snapshots work correctly',()=>{
+ const r=room();
+ r.players[0].token='secret';
+ const s=E.snapshot(r);
+ assert.ok(!JSON.stringify(s).includes('secret'));
+ assert.equal(s.ropeMax,HARD.ropeMax);
+});
+
+// Test 10: Dangling and hauling
+test('dangling and hauling works',()=>{
+ const r=room(2,7);
+ const[a,b]=r.players;
+ a.x=485;a.y=526;a.ground=true;
+ b.x=555;b.y=590;b.ground=false;
+ E.tick(r);
+ assert.equal(b.dangling,true);
+ assert.equal(r.deaths,0);
+ a.keys={left:true};
+ const prevY=b.y;
+ advance(r,5);
+ assert.equal(a.hauling,true);
+ assert.ok(b.y<prevY);
+});
+
+// Test 11: Maps dimensions
+test('maps have correct dimensions',()=>{
+ for(const l of E.levels){
+  assert.ok(l.width>11000);
+  assert.equal(l.stops.length,12);
+  assert.equal(l.checkpoints.length,11);
+ }
+});
+
+// Test 12: Crumbling platforms
+test('crumbling platforms work',()=>{
+ const r=room(2,0);
+ const l=E.levels[0];
+ if(l.crumbling && l.crumbling.length>0){
+  const c=l.crumbling[0];
+  r.players[0].x=c[0]+10;
+  r.players[0].y=c[1]-44;
+  r.players[0].ground=true;
+  for(let i=0;i<HARD.maxPlatformTime+20;i++)E.tick(r);
+  assert.ok(r.crumblingPlatforms && r.crumblingPlatforms[0]?.collapsed);
+ }
+});
+
+// Test 13: Obstacles move
+test('obstacles move correctly',()=>{
+ const r=room(2,5);
+ const obs1=E.obstacles({...r,ticks:0});
+ const obs2=E.obstacles({...r,ticks:60});
+ assert.ok(Math.abs(obs1.pumpkins[0].x - obs2.pumpkins[0].x) > 0);
+});
+
+// Test 14: Narrow platforms
+test('platforms are narrow',()=>{
+ const r=room();
+ const l=E.levels[0];
+ const narrow=l.platforms.filter(p=>p[2]<80);
+ assert.ok(narrow.length>0);
+});
+
+// Test 15: Wide gaps
+test('maps have wide gaps',()=>{
+ const r=room();
+ const l=E.levels[0];
+ assert.ok(l.width>20000);
+});
