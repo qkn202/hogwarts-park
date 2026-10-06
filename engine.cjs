@@ -366,6 +366,7 @@ function buildV2Level(spec) {
   spec.chapters.forEach((ch, i) => {
     if (i) lv.checkpoints.push(cx + 20);
     lv.stops.push({ x: cx + 60, label: ch.label, kind: ch.parts[0].k, instruction: ch.tip });
+    (lv.chapterX = lv.chapterX || []).push(cx);
     let cur = cx + 320;
     for (const part of ch.parts) cur = PARTS[part.k](lv, gaps, cur, part);
     const end = Math.max(cur + 120, cx + 900);
@@ -384,6 +385,37 @@ function buildV2Level(spec) {
 }
 
 const levels = [...v2Specs.map(buildV2Level), ...classicLevels];
+
+// Bonus socks along the route (+points). Placed where only a co-op move gets you:
+// V2 — on every raised ledge, deep inside each toss/fan gap (anchor + dangle-grab + haul), at the end of
+// house bridges and on a shrink-zone stone. Classic — on elevated platforms. Sock centre = standing elf centre.
+const SOCK_R = 30, SOCK_POINTS = 100, SOCK_SET_BONUS = 300;
+function placeSocks(lv) {
+  const socks = [];
+  const onTop = (x, y) => socks.push({ x: Math.round(x), y: y - PH / 2 });
+  if (lv.v2) {
+    lv.blocks.forEach((b, bi) => socks.push({ x: Math.round(b.x + b.w / 2), y: 570 - blockHeight(b.kind, 2) - PH / 2, block: bi }));
+    lv.tossGaps.forEach(([a, b]) => socks.push({ x: Math.round((a + b) / 2), y: 622, dangle: true }));
+    lv.fans.forEach(f => socks.push({ x: f[0] + 100, y: 622, dangle: true }));
+    lv.houseBridges.forEach(hb => onTop(hb.x + 40 + (hb.cycles - 1) * V2.houseSpacing + 25, 530));
+    lv.shrinkZones.forEach(([z]) => onTop(z + 80 + 40 + 3 * 90 + 25, 510));
+    // One high sock per chapter over safe floor: solo jump peaks ~60px short, a 2-stack jump or a toss grabs it.
+    (lv.chapterX || []).forEach(cx => socks.push({ x: cx + 170, y: 440, high: true }));
+  } else {
+    let last = -1e9;
+    lv.platforms
+      .filter(([x, y, w, h]) => y < 560 && h <= 20 &&
+        !lv.platforms.some(([x2, y2, w2]) => y2 < y && y2 > y - PH - 8 && x2 < x + w / 2 + PW && x2 + w2 > x + w / 2 - PW))
+      .sort((a, b) => a[0] - b[0])
+      .forEach(([x, y, w]) => { if (x - last >= 250 && socks.length < 12) { onTop(x + w / 2, y); last = x; } });
+  }
+  return socks.sort((a, b) => a.x - b.x);
+}
+levels.forEach(lv => { lv.bonusSocks = placeSocks(lv); });
+// Current sock centre (ledge socks follow the team-size-dependent ledge height).
+function sockPos(lv, s, n) {
+  return s.block != null ? { x: s.x, y: 570 - blockHeight(lv.blocks[s.block].kind, n) - PH / 2 } : s;
+}
 const nHouses = room => Math.max(1, Math.min(4, room.players.length));
 function fanOn(f, t) { return !f[4] || Math.sin((t || 0) / f[4] * Math.PI) > 0; }
 
@@ -404,6 +436,8 @@ function init(room) {
   room.players.forEach((p, i) => { p.house = i; });
   room.checkpoint = 80;
   room.checkpointsPassed = 0;
+  room.socksBanked = [];
+  room.socksCarried = [];
   room.runDeaths = 0;
   room.elapsed = undefined;
   spawn(room);
@@ -462,6 +496,7 @@ function teamWipe(room) {
   room.deaths = (room.deaths || 0) + 1;
   room.runDeaths = (room.runDeaths || 0) + 1;
   room.teamRespawn = timer;
+  room.socksCarried = [];
   room.players.forEach(p => {
     p.dead = timer;
     p.dangleTicks = 0;
@@ -596,6 +631,8 @@ function tick(room) {
   if (ps.length < 2 || ps.some(p => !p.connected)) return;
 
   room.ticks++;
+  room.socksBanked = room.socksBanked || [];
+  room.socksCarried = room.socksCarried || [];
 
   if (room.teamRespawn > 0) {
     room.teamRespawn--;
@@ -920,6 +957,13 @@ function tick(room) {
       room.key = true;
     }
 
+    // Bonus socks: picked up = carried; banked at the next checkpoint (or the finish), lost on a team wipe.
+    (lv.bonusSocks || []).forEach((sk, si) => {
+      if (room.socksBanked.includes(si) || room.socksCarried.includes(si)) return;
+      const sp = sockPos(lv, sk, n);
+      if (Math.hypot(p.x + PW / 2 - sp.x, p.y + PH / 2 - sp.y) < SOCK_R) room.socksCarried.push(si);
+    });
+
     // Standing Death timer: counts only while grounded and not moving.
     // Exempt: tower base (someone standing on you), hauling the rope, spawn grace, waiting at the door with the sock.
     const moved = Math.abs(p.x - oldX) > 0.25 || Math.abs(p.y - oldY) > 0.25;
@@ -1000,6 +1044,8 @@ function tick(room) {
     if (x > room.checkpoint && ps.every(p => p.dead <= 0 && p.x >= x && p.y < 580)) {
       room.checkpoint = x;
       room.checkpointsPassed++;
+      room.socksBanked.push(...room.socksCarried);
+      room.socksCarried = [];
     }
   }
 
@@ -1007,6 +1053,8 @@ function tick(room) {
   if (room.key && ps.every(p => p.ready)) {
     room.status = 'won';
     room.elapsed = room.ticks / 60;
+    room.socksBanked.push(...room.socksCarried);
+    room.socksCarried = [];
   }
 }
 
@@ -1117,8 +1165,11 @@ function scoring(r) {
   const syncBadge = won && required > 0 && (r.drumHits || 0) <= required * 2;
   const ropeBadge = won && !!lv.v2 && !(r.dangleTotal || 0);
   const bonus = (syncBadge ? 250 : 0) + (ropeBadge ? 250 : 0);
-  const total = checkpoints + sock + finish + speed + care + bonus;
-  return { checkpoints, sock, finish, speed, care, bonus, badges: { sync: syncBadge, rope: ropeBadge }, total, stars: won ? (total >= 5000 ? 3 : total >= 4200 ? 2 : 1) : 0 };
+  // Bonus socks collected along the way (banked only) + a set bonus for collecting every one.
+  const sockTotal = (lv.bonusSocks || []).length, sockCount = (r.socksBanked || []).length;
+  const socks = sockCount * SOCK_POINTS + (sockTotal && sockCount >= sockTotal ? SOCK_SET_BONUS : 0);
+  const total = checkpoints + sock + finish + speed + care + bonus + socks;
+  return { checkpoints, sock, finish, speed, care, bonus, socks, sockCount, sockTotal, badges: { sync: syncBadge, rope: ropeBadge }, total, stars: won ? (total >= 5000 ? 3 : total >= 4200 ? 2 : 1) : 0 };
 }
 
 function snapshot(r) {
@@ -1151,6 +1202,8 @@ function snapshot(r) {
     fogState: r.fogState || [],
     drumHits: r.drumHits || 0,
     dangleTotal: r.dangleTotal || 0,
+    socksBanked: r.socksBanked || [],
+    socksCarried: r.socksCarried || [],
     players: r.players.map(({ id, name, x, y, vx, vy, dead, ready, connected, house, spin, facing, invincible, dangling, hauling, stackHeight, onMountain, standingTicks }) => ({
       id, name, x, y, vx, vy, dead, ready, connected, house, spin, facing, invincible,
       dangling: !!dangling, hauling: !!hauling, stackHeight, onMountain, standingTicks
@@ -1159,6 +1212,6 @@ function snapshot(r) {
   };
 }
 
-const api = { W, H, PW, PH, levels, init, tick, snapshot, constrainRopes, obstacles, solidsFor, scoring, HARD, V2, checkRotorCollision, blockHeight, activePlates, plateY, fanOn, nHouses };
+const api = { W, H, PW, PH, levels, init, tick, snapshot, constrainRopes, obstacles, solidsFor, scoring, HARD, V2, checkRotorCollision, blockHeight, activePlates, plateY, fanOn, nHouses, sockPos, SOCK_R, SOCK_POINTS, SOCK_SET_BONUS };
 if (typeof module !== 'undefined') module.exports = api; else window.ElfEngine = api;
 })();

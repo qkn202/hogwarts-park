@@ -3,7 +3,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-blue.svg)]()
-[![Build Status](https://img.shields.io/badge/Tests-51%2F51%20Passing-brightgreen.svg)]()
+[![Build Status](https://img.shields.io/badge/Tests-59%2F59%20Passing-brightgreen.svg)]()
 
 > **Một chiếc vớ. Cả đội tự do.**  
 > Party game co-op platformer 2–8 người chơi kết nối bằng sợi dây thừng ma thuật, lấy cảm hứng từ *Pico Park*, *Chained Together* kết hợp thế giới phù thủy Hogwarts.  
@@ -32,6 +32,20 @@
 - Hình vẽ khớp hitbox: bục di động, bập bênh, cánh quạt 4 lưỡi; sàn sập và bệ đỡ giờ đã hiện ra.
 - Tháp người 3 tầng vượt tường thành (3-player bastion wall) kèm kiểm chứng vật lý.
 - Test: 36 → **51 test** (thêm `tests/audit.test.cjs`, `tests/maps_v2.test.cjs`).
+
+**3. Cơ chế thu thập vớ dọc đường (Bonus Socks) tăng điểm**
+- Rải các chiếc vớ ma thuật nhỏ tại các vị trí hiểm hóc đòi hỏi phối hợp co-op:
+  - Trên các bục cao (cần chồng vai, ném hoặc bập bênh bắn lên).
+  - Treo lơ lửng giữa các hố sâu/quạt gió (phải làm mỏ neo cho bạn đu dây xuống nhặt rồi kéo lên).
+  - Lơ lửng trên cao dọc đường (nhảy đơn không tới, cần tháp 2 người đứng nhảy lên hoặc ném).
+  - Cuối các cầu bục màu hoặc phiến đá bùa rút dây.
+- **Quy tắc giữ & cất vớ:**
+  - Khi chạm vớ, gia tinh sẽ mang theo vớ (`socksCarried`).
+  - Vớ chỉ được **cất an toàn** (`socksBanked`) khi cả đội an toàn bước qua **Cờ nghỉ (Checkpoint)** tiếp theo hoặc bước qua **Cổng về đích**.
+  - Nếu cả đội tử nạn (team wipe), các chiếc vớ chưa cất sẽ bị rơi mất và xuất hiện lại tại chỗ cũ.
+- **Điểm thưởng:** `+100 điểm` cho mỗi chiếc vớ đã cất an toàn + `+300 điểm thưởng hoàn hảo` nếu thu thập đủ tất cả vớ trong map.
+- HUD hiển thị số lượng vớ: `🧦 [đã cất]/[tổng] (+[đang giữ])`. Âm thanh ding vui tai khi nhặt và thông báo toast chúc mừng khi đủ bộ.
+- Bổ sung test suite `tests/socks.test.cjs` nâng tổng số test lên **59/59 passing**.
 
 ### Hôm qua — Thứ Hai, 05/10/2026
 
@@ -237,15 +251,16 @@ Map V2 tắt *Standing Death* (sương đuổi thay thế), hồi sinh 40 tick. 
 ## 🏆 Hệ thống Chấm điểm & Đánh giá Sao (Scoring System)
 
 ```
-Tổng điểm = Điểm Checkpoint + Điểm Chiếc Vớ + Điểm Về Đích + Thưởng Tốc Độ + Thưởng Cẩn Thận + Huy hiệu
+Tổng điểm = Điểm Checkpoint + Điểm Chiếc Vớ + Điểm Về Đích + Thưởng Tốc Độ + Thưởng Cẩn Thận + Huy hiệu + Vớ Dọc Đường
 ```
 
 - **Cờ Checkpoint:** tổng quỹ `2200 điểm` chia đều cho số cờ của map (cổ điển 11 cờ × 200, V2 5 cờ × 440).
-- **Chiếc vớ tự do (The Sock):** `+500 điểm` khi chạm lấy vớ.
+- **Chiếc vớ tự do (The Sock):** `+500 điểm` khi chạm lấy vớ khóa cổng.
 - **Về đích (Gate Clearance):** `+1000 điểm` khi cả đội cùng bước qua cổng vòm.
 - **Thưởng Tốc độ (Speed Bonus):** `max(0, 1000 - max(0, giây - par) * 3)` — par V2 = 240s (map 8: 300s), cổ điển = `chiều_dài_map / 100` giây.
 - **Thưởng Cẩn thận (Care Bonus):** `max(0, 600 - số_lần_chết * 50)` — Không ngã vực bảo toàn 600 điểm tuyệt đối.
 - **Huy hiệu (V2):** 🥁 *Nhịp hoàn hảo* (ít cú dậm hụt) `+250` · 🪢 *Không ai treo dây* `+250`.
+- **Vớ Dọc Đường (Bonus Socks):** `+100 điểm` mỗi chiếc đã cất an toàn tại cờ nghỉ / cổng đích + `+300 điểm thưởng đủ bộ` khi nhặt sạch toàn bộ vớ trong màn.
 - **Đánh giá Xếp hạng Sao:**
   - 🌟🌟🌟 **3 Sao:** Tổng điểm ≥ **5,000 điểm** (Chuẩn Pro-Gamer Speedrun).
   - 🌟🌟 **2 Sao:** Tổng điểm ≥ **4,200 điểm** (Vượt ải xuất sắc).
@@ -287,7 +302,7 @@ http://localhost:3017
 # Kiểm tra cú pháp syntax
 npm run check
 
-# Chạy toàn bộ 51 test (cổ điển + audit + bot giải map V2)
+# Chạy toàn bộ 59 test (cổ điển + audit + bot giải map V2 + thu thập vớ)
 npm test
 
 # Build bundle client
