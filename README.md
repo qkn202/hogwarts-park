@@ -47,6 +47,15 @@
 - HUD hiển thị số lượng vớ: `🧦 [đã cất]/[tổng] (+[đang giữ])`. Âm thanh ding vui tai khi nhặt và thông báo toast chúc mừng khi đủ bộ.
 - Bổ sung test suite `tests/socks.test.cjs` nâng tổng số test lên **59/59 passing**.
 
+**4. Cân chỉnh độ chùng dây & khoảng cách phiến trống co-op (Drums & Ledge Spacing Calibration)**
+- **Khắc phục lỗi kẹt/giật dây tại bục cao (Chương 3/6 · Bục lò sưởi, Bàn giáo sư, Bậc chồng vai)**:
+  - *Nguyên nhân trước đây:* Bục cao 95px–140px nhưng phiến trống dưới sàn bị đặt cách xa chân bục tới 110px. Khoảng cách đường chéo giữa 2 bạn lên tới ~199px (tiệm cận kịch trần 220px của dây), tạo lực đàn hồi kéo giật cực mạnh: bạn dưới đất không thể bước tới phiến trống, bạn trên bục liên tục bị giật ngã xuống sàn.
+  - *Giải pháp:* Kéo phiến trống dưới sàn vào sát ngay chân bục (khoảng hở chân bục chỉ còn **25px** thay vì 110px). Khoảng cách đường chéo giữa 2 bạn giảm xuống chỉ còn **~123px** (ngắn hơn chiều dài nghỉ 140px của dây). Dây chùng tự nhiên, giúp cả 2 người thoải mái căn nhịp nhảy cùng lúc mà không bị kéo giật.
+- **Khắc phục lỗi thiếu dây khi dàn hàng ngang 3–4 người (Chương 5/6 · Nhịp cả hội)**:
+  - *Nguyên nhân trước đây:* Khoảng cách giữa các phiến trống cạnh nhau trên sàn phẳng là 180px. Với đội 3 người, tổng cự ly từ phiến 1 đến phiến 3 là 360px, vượt xa tầm với của 2 đoạn dây 140px. Bạn thứ 3 không thể bước chân tới phiến trống nếu 2 bạn đầu không rời phiến; khi nhảy khoảng cách vượt 220px giật cả đội ngã chụm vào nhau.
+  - *Giải pháp:* Rút gọn khoảng cách giữa các phiến trống trên sàn từ 180px xuống **105px** (khoảng hở giữa 2 phiến chỉ còn **45px**). Khi cả đội 3 hoặc 4 người đứng dàn hàng ngang, mỗi đoạn dây vẫn còn chùng tận **35px**, cho phép mọi người thoải mái lấy đà nhảy và tiếp đất cùng lúc.
+- Toàn bộ 59/59 bài test bot solvability và physics tiếp tục đạt chuẩn tuyệt đối.
+
 ### Hôm qua — Thứ Hai, 05/10/2026
 
 - Ra mắt bản co-op platformer Hogwarts nhiều chương với vật lý dây treo kiểu *Chained Together*; cấu hình deploy tĩnh lên Vercel.
@@ -256,6 +265,8 @@
 | `blockHeight (stack3)` | `140px` | Chiều cao bục tháp 3 tầng (tự hạ 95px khi phòng chỉ có 2 người) |
 | `blockHeight (toss)` | `115px` | Chiều cao bục chỉ có thể ném bạn mới lên được |
 | `blockHeight (cat)` | `160px` | Chiều cao bục bập bênh máy bắn |
+| `drumSpacingFloor` | `105px` | Khoảng cách tâm giữa các phiến trống phẳng (chùng dây 35px cho đội 2–4 người) |
+| `drumSpacingLedge` | `95px` | Cự ly chân bục cao tới phiến sàn (khoảng hở 25px → đường chéo ~123px < 140px dây) |
 | `bonusSockPoints` | `+100 / +300` | +100đ mỗi chiếc vớ cất an toàn, +300đ thưởng đủ bộ |
 
 ### 2. Thông số Kỹ thuật Chế độ Cổ điển (Classic HARD Mode Config):
