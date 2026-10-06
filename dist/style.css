@@ -27,3 +27,43 @@
 .room-info small{font-size:9px;color:#8da48c}
 .join-quick-btn{background:#39523b;border:1px solid #a3b98c;color:#faebd0;border-radius:4px;font-size:11px;font-weight:bold;padding:5px 8px;cursor:pointer;white-space:nowrap}
 .join-quick-btn:hover{background:#4e6f51;border-color:#edd18a}
+
+/* Mobile: keep the game and both thumb groups in view without expensive backdrop blur. */
+@media (pointer:coarse), (max-width:700px) {
+  .lobby-card,.waiting,dialog::backdrop,.stage-transition{backdrop-filter:none}
+  .vignette{box-shadow:inset 0 0 45px #07121370}
+  .touch{justify-content:space-between;gap:10px;margin:12px auto;max-width:720px;padding:0 max(8px,env(safe-area-inset-left)) 0 max(8px,env(safe-area-inset-right));touch-action:none}
+  .touch button{flex:0 0 clamp(54px,15vw,80px);height:58px;-webkit-touch-callout:none}
+  .touch button:nth-child(3){margin-left:auto}
+  .touch button:last-child{margin-left:0}
+  .in-game .bottom-row{display:none}
+  .in-game canvas{image-rendering:auto}
+  .in-game .game-toolbar>div:first-child{min-width:0}
+  .in-game #level-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:24vw}
+  .in-game #sock-status{display:none}
+}
+@media (pointer:coarse) and (orientation:landscape) and (max-height:600px) {
+  .in-game>header,.in-game .heading,.in-game footer,.in-game .game-footer{display:none}
+  .in-game main{padding:6px max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left))}
+  .in-game .game-shell{max-width:calc((100svh - 146px)*1200/660);margin:0 auto}
+  .in-game .game-toolbar{height:34px;padding:0 10px}
+  .in-game .score-bar{padding:5px 12px;min-height:26px}
+  .in-game .touch{margin:8px auto}
+  .in-game .touch button{height:52px}
+}
+
+/* Seamless Stage Transition Banner */
+.stage-transition{position:absolute;inset:0;background:rgba(8,19,23,0.78);z-index:4;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:fadeTransIn 0.3s ease-out}
+@keyframes fadeTransIn{from{opacity:0;transform:scale(0.97)}to{opacity:1;transform:scale(1)}}
+.stage-transition-card{background:linear-gradient(135deg,rgba(21,36,31,0.96),rgba(15,26,22,0.98));border:1.5px solid #dabc7b;border-radius:12px;max-width:440px;width:90%;padding:22px 28px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.6),0 0 25px rgba(218,188,123,0.18)}
+.trans-badge{font-size:10px;letter-spacing:2.5px;color:var(--gold);font-weight:600;margin-bottom:6px}
+.stage-transition h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;margin:4px 0 8px;color:#f0e6cf;line-height:1.15}
+.trans-stars{font-size:22px;letter-spacing:4px;color:#f3d48d;margin:2px 0 6px}
+.trans-desc{font-size:12px;color:#b1c4aa;margin:0 0 14px;line-height:1.5}
+.trans-next-box{background:rgba(11,25,20,0.85);border:1px solid #435b49;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;flex-direction:column;gap:3px}
+.trans-next-box span{font-size:9px;letter-spacing:1px;color:#8ba38e;text-transform:uppercase}
+.trans-next-box strong{font-size:15px;color:#ecd8a5}
+.trans-timer-bar{height:4px;width:100%;background:#1d3126;border-radius:2px;overflow:hidden;margin-top:6px}
+.trans-progress{height:100%;width:100%;background:linear-gradient(90deg,#97d19e,#dabc7b);transform-origin:left;animation:transCountdown 2.2s linear forwards}
+@keyframes transCountdown{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.stage-transition .gold-btn{margin-top:6px;padding:10px;font-size:12px}

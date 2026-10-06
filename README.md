@@ -3,7 +3,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-blue.svg)]()
-[![Build Status](https://img.shields.io/badge/Tests-59%2F59%20Passing-brightgreen.svg)]()
+[![Build Status](https://img.shields.io/badge/Tests-66%2F66%20Passing-brightgreen.svg)]()
 
 > **Một chiếc vớ. Cả đội tự do.**  
 > Party game co-op platformer 2–8 người chơi kết nối bằng sợi dây thừng ma thuật, lấy cảm hứng từ *Pico Park*, *Chained Together* kết hợp thế giới phù thủy Hogwarts.  
@@ -65,7 +65,19 @@
     - Khi ở trong vực / đu dây sâu ($y > 530$): Giữ nguyên nghiêm ngặt `140px / 220px` để bảo toàn mạng sống và tầm nhặt vớ.
     - Khi đứng trên bục cao co-op ($\Delta y > 70\text{px}$ và không lọt hố): Chiều dài nghỉ của dây được mở rộng tự động theo đường chéo hình học $\text{Math.hypot}(110, \Delta y)$ với trần kéo giãn $+80\text{px}$ (ví dụ bục máy bắn 160px có dây nghỉ ~194px, trần ~274px).
   - *Hiệu quả thực chiến:* Đạt **100% độ ổn định đứng yên (Zero Tension Idle)** và **100% tỷ lệ mở cửa thành công khi cùng nhảy (Synchronized Drum Jump)** trên toàn bộ 18 màn bục cao của cả 8 map V2. Các bạn tha hồ căn nhịp nhảy mà không còn bất kỳ hiện tượng kéo giật hay bay bổng nào.
-- 59/59 test pass 100%.
+**6. Ghép toàn bộ hành trình liền mạch (Seamless Campaign Auto-Advance & Grand Finale)**:
+- **Tự động chuyển tiếp chặng (Seamless Auto-Advance):**
+  - Khi cả đội gia tinh chạm tới Cửa thoát (Exit Door) với chiếc vớ trên tay, thay vì bị ngắt quãng và buộc chủ phòng phải thoát ra sảnh chọn lại map, game tự động kích hoạt tiến trình chuyển chặng liền mạch.
+  - Hiệu ứng pháo hoa ngôi sao phép thuật bùng nổ, âm thanh hợp âm chiến thắng vang lên.
+  - Bảng thông báo chặng hoàn thành hiển thị số sao, thời gian và số lần vấp ngã kèm thanh đếm ngược tự động 2.2 giây chuyển sang chặng tiếp theo.
+  - Chủ phòng có thể bấm phím `Space`/`Enter` hoặc nút "Tiến vào ngay ➔" để bước vào ngay lập tức mà không cần đợi đếm ngược.
+- **Đồng bộ đa chế độ (Multi-Mode Auto-Advance):**
+  - *Online Supabase Realtime:* Chủ phòng tự động phát lệnh `startHostGame(nextLevel)`, tất cả người chơi trong phòng đồng loạt chuyển map tức thì.
+  - *Chơi chung bàn phím (Local Mode):* Tự động khởi tạo map tiếp theo với đầy đủ các gia tinh tại điểm xuất phát.
+  - *Mạng LAN:* Máy chủ chấp thuận `/api/start` từ trạng thái `won` để nạp map mới mượt mà.
+- **Đại tiệc chiến thắng cuối cùng (Grand Finale):**
+  - Khi vượt qua Chặng 08 (Sân lâu đài Hogwarts / Bắt Trái Snitch Vàng), màn hình vinh danh tối cao xuất hiện: `🏆 CHIẾN THẮNG TOÀN DIỆN HOGWARTS!` cùng tổng điểm tích lũy của cả 8 chặng, sao xếp hạng và tùy chọn "Chơi lại từ đầu (Chặng 01)" hoặc "Quay về sảnh".
+- Toàn bộ **66/66 test cases** đạt chuẩn tuyệt đối.
 
 ### Hôm qua — Thứ Hai, 05/10/2026
 
@@ -356,7 +368,7 @@ http://localhost:3017
 # Kiểm tra cú pháp syntax
 npm run check
 
-# Chạy toàn bộ 59 test (cổ điển + audit + bot giải map V2 + thu thập vớ)
+# Chạy toàn bộ 66 test (gameplay, online, khán giả và render mobile)
 npm test
 
 # Build bundle client
@@ -374,3 +386,28 @@ npm run build
 
 ## 📜 Giấy phép
 Phát hành theo giấy phép **MIT License**. Dự án mã nguồn mở phục vụ cộng đồng yêu thích Harry Potter và dòng game Party Co-op!
+
+## 📱 Tối ưu hiển thị mobile (06/10/2026)
+
+### Cấu trúc và nhịp chạy
+
+- `engine.cjs`: vật lý, va chạm, dây, cơ chế co-op, map và snapshot. `npm run build` sao chép sang `dist/engine.js` cho bản deploy tĩnh.
+- `dist/game.js`: điều khiển, Supabase, HUD và Canvas 2D; `dist/map-scenes.js`: phong cảnh của từng khu vực; `dist/style.css`: bố cục desktop/mobile.
+- Chơi chung bàn phím và chủ phòng Supabase chạy vật lý trên trình duyệt; LAN chạy vật lý trong `server.cjs`. Nhịp vật lý vẫn là **60 tick/giây**, độc lập với nhịp vẽ.
+
+### Những phần được tối ưu
+
+- Bỏ vẽ vật thể ngoài camera. Với sàn dài, chỉ chạy vòng lặp trang trí gạch/rêu trong vùng nhìn thấy; cache danh sách sàn tĩnh.
+- Phong cảnh dùng một canvas đệm có kích thước hữu hạn, dùng lại cho cả hai ô nền parallax. Chuyển map hoặc xoay máy sẽ làm mới cache. Hoạt ảnh nền cập nhật tối đa 15 lần/giây trên mobile (5 khi máy yếu), 30 trên desktop; bẫy, cửa trống, sương và bục di động vẫn lấy trạng thái hiện tại.
+- Ánh sáng dùng sprite cache giới hạn 48 màu; tối đa 48 hạt trên mobile, 24 khi máy yếu, 140 trên desktop.
+- Mobile tự chọn chiều rộng render 600–960 px theo kích thước hiển thị, giới hạn hệ số mật độ điểm ảnh ở 1.5. Desktop giữ 1200 × 660. Tọa độ game luôn là 1200 × 660, hitbox không đổi.
+- Nhịp vẽ tối đa 60 FPS. Khi mobile đo được dưới 42 FPS trong cửa sổ 2 giây lúc chơi, giảm về tối đa 720 px và 30 FPS để giảm tải. Chế độ nhẹ giữ đến khi tải lại trang hoặc chuyển sang giao diện desktop, tránh liên tục đổi chất lượng. Đây là mục tiêu điều tiết tải, không đảm bảo mọi điện thoại đạt 30/60 FPS.
+- Camera và tuổi thọ hạt dựa trên thời gian thực; giảm nhịp vẽ không làm chậm vật lý, nhịp trống hay thời gian cửa mở.
+- HUD cập nhật tối đa 10 lần/giây khi chơi; đổi trạng thái/phòng/người chơi được cập nhật ngay. Âm thanh và sự kiện thu thập vớ vẫn xử lý từng snapshot.
+- Giảm blur giao diện, chia nút cảm ứng thành hai cụm cho hai ngón cái, thu gọn bố cục khi điện thoại nằm ngang. Có thể vừa giữ hướng vừa nhảy/ném.
+
+### Kiểm tra và đo trên điện thoại
+
+Chạy `npm run check`, `npm test` và `npm run build`. Các regression trong `tests/mobile-render.test.cjs` chạy frontend thật với đồng hồ giả lập ở 30/60/120 Hz, kiểm tra vật lý 60 Hz, chủ phòng tiếp tục chạy khi tạm dừng điều khiển, culling, các map và chuyển trạng thái HUD.
+
+Trong DevTools, đọc `window.sockboundPerformance` để xem FPS vẽ, thời gian JavaScript của hàm vẽ (`drawMs`), chất lượng và độ phân giải hiện tại. `simulationHz` là nhịp vật lý mục tiêu. `drawMs` không bao gồm toàn bộ thời gian GPU/compositor. Cần kiểm tra thêm trên Safari iPhone và Chrome Android thật, cả vai trò chủ phòng lẫn người tham gia; tối ưu này không thay giao thức mạng hoặc thêm nội suy mạng.
