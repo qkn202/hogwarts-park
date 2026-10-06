@@ -18,13 +18,13 @@ const HARD = {
   pumpkinBounce: -11,
   rotorKnockback: -11.5,
   maxPlatformTime: 75,
-  standingDeathTicks: 100,
+  standingDeathTicks: 120,
   minPlatformWidth: 40,
   mountainPeakY: 270,
   mountainWindForce: 1.2
 };
 
-const levels = [
+const classicLevels = [
   {map:'common-room', name:'Phòng sinh hoạt chung', hint:'VỰC CỰC RỘNG!', platforms:[...floor,[350,510,80,18],[670,495,70,18]], key:[870,515], door:[1100,498], spikes:[], pumpkins:[[630,515,110]]},
   {map:'great-hall', name:'Đại Sảnh Đường', hint:'SÀN RUNG!', platforms:[...floor,[530,500,100,18]], key:[920,505], door:[1100,498], spikes:[], ice:[200,1050], pumpkins:[[680,520,130]]},
   {map:'charms', name:'Lớp học Bùa chú', hint:'NÚI CAO NHẤT!', platforms:[...floor,[420,490,80,18],[780,450,130,18]], key:[865,418], door:[1100,498], spikes:[], springs:[[360,570,90],[695,570,100]]},
@@ -59,7 +59,7 @@ const chapterNames = [
   ['Cống sân lâu đài','Gió giật tai dài','Sân phủ sương trơn','Đỉnh núi chót vót','Bí ngô đá bóng','Cầu gỗ chòng chành','Hào sâu trắc trở','Cánh quạt trần quay','Băng chuyền lát đá','Đệm hoa chuông BOING','Bão tuyết sân thượng','Vớ dưới ánh trăng']
 ];
 
-levels.forEach((lv, idx) => {
+classicLevels.forEach((lv, idx) => {
   const stride = 1700 + idx * 40;
   lv.width = 180 + stride * 12 + 520;
   lv.platforms = [];
@@ -195,7 +195,197 @@ levels.forEach((lv, idx) => {
   lv.key = [lv.width - 330, 515];
   lv.door = [lv.width - 115, 498];
   lv.hint = 'VỰC CỰC RỘNG! ĐỨNG YÊN = CHẾT!';
+  lv.classic = true;
+  lv.standingDeath = true;
+  lv.name = 'Cổ điển · ' + lv.name;
 });
+
+// =====================================================================================
+// V2 MAPS — 6 dense co-op chapters per map. Every module is calibrated against measured
+// physics (see tests/maps_v2.test.cjs): solo jump ~60px high / ~65px far, 2-stack jump ~104px,
+// toss ~125px high / ≤~98px far, 3-stack ~148px, catapult ~170px.
+// =====================================================================================
+const V2 = {
+  tossGap: 112,          // > solo reach (~94 incl. overhang), < toss reach (~125)
+  window: 20,            // drum plates must all be landed on within this many ticks
+  launchVy: -17,         // seesaw catapult launch (~170px)
+  ropeFray: 150,         // dangling longer than this snaps the rope (team wipe)
+  respawn: 40,
+  fogSpeed: n => n <= 2 ? 1.6 : n <= 4 ? 1.9 : 2.2,
+  shrinkRest: 80, shrinkMax: 120,
+  houseSpacing: 160,     // same-colour platforms 160px apart: solo can't, a teammate's toss can
+  blockH: { stack2: 95, toss: 115, cat: 160 }
+};
+
+function blockHeight(kind, n) {
+  if (kind === 'stack') return n >= 3 ? 140 : 95;
+  return V2.blockH[kind] || 95;
+}
+
+const PARTS = {
+  // Gap a single elf cannot jump; a teammate's toss can. The rest are hauled over by rope.
+  tossGap(lv, gaps, x) {
+    gaps.push([x, x + V2.tossGap]);
+    lv.tossGaps.push([x, x + V2.tossGap]);
+    return x + V2.tossGap + 170;
+  },
+  // Drum plates + full-height gate. Plates: 0 = floor, 'stack2'|'stack'|'toss'|'cat' = floating ledge.
+  drums(lv, gaps, x, part) {
+    let cur = x;
+    const plates = [];
+    for (const h of part.plates) {
+      if (h === 'cat') { lv.catapults.push({ x: cur, y: 556, w: 150 }); cur += 150; }
+      if (h) {
+        lv.blocks.push({ x: cur, w: 70, kind: h });
+        plates.push({ x: cur + 5, w: 60, block: lv.blocks.length - 1 });
+        cur += 70 + 110;
+      } else {
+        plates.push({ x: cur, w: 60 });
+        cur += 60 + 120;
+      }
+    }
+    const gate = { x: cur + 10, w: 40 };
+    lv.drums.push({ plates, gate, min: part.min || 2, max: part.max || plates.length, open: part.open || 0 });
+    return gate.x + gate.w + 150;
+  },
+  // Leapfrog bridge over a gap: each colour of platform is only solid for elves of that house.
+  house(lv, gaps, x, part) {
+    const L = part.cycles * V2.houseSpacing + 60;
+    // First cycle hovers over solid floor so every colour can board; the leapfrog starts on cycle 2.
+    gaps.push([x + V2.houseSpacing + 30, x + L]);
+    lv.houseBridges.push({ x, cycles: part.cycles });
+    return x + L + 170;
+  },
+  // Pulsing fan over a gap: jump in while it blows, or dangle.
+  fanGap(lv, gaps, x) {
+    gaps.push([x, x + 320]);
+    lv.fans.push([x - 20, 420, 360, 1.5, 150]);
+    return x + 320 + 170;
+  },
+  // Stepping stones inside a rope-shrink zone (rope 80/120): the team must hop in lockstep.
+  shrink(lv, gaps, x, part) {
+    gaps.push([x, x + 640]);
+    for (let j = 0; j < 7; j++) lv.platforms.push([x + 40 + j * 90, 540 - (j % 2) * 30, 50, 18]);
+    lv.shrinkZones.push([x - 80, x + 720]);
+    if (part.rotors) lv.rotors.push([x + 215, 400, 75], [x + 485, 400, 75]);
+    return x + 640 + 170;
+  },
+  rotor(lv, gaps, x) {
+    lv.rotors.push([x + 130, 465, 80]);
+    return x + 300;
+  },
+  // Overlays: do not advance the cursor.
+  pumpkins(lv, gaps, x) {
+    lv.pumpkins.push([x + 160, 526, 120], [x + 470, 526, 110]);
+    return x;
+  },
+  conveyor(lv, gaps, x, part) {
+    lv.conveyors.push([x, x + (part.len || 600)]);
+    return x;
+  }
+};
+
+const T = (k, extra = {}) => ({ k, ...extra });
+const v2Specs = [
+  { map: 'common-room', name: 'Phòng sinh hoạt chung', hint: 'Nhập môn: NÉM bạn qua vực · CHỒNG VAI lên bục · NHẢY CÙNG NHỊP!', toast: 'Không ai qua được một mình đâu.', chapters: [
+    { label: 'Thảm bị thủng', tip: 'X để ném bạn qua vực, rồi kéo nhau qua', parts: [T('tossGap')] },
+    { label: 'Trống phòng ngủ', tip: 'Cùng đáp xuống 2 phiến TRONG 1 NHỊP', parts: [T('drums', { plates: [0, 0], max: 2 })] },
+    { label: 'Bục lò sưởi', tip: 'Chồng vai đưa 1 bạn lên bục, rồi nhảy cùng nhịp', parts: [T('drums', { plates: ['stack2', 0], max: 2 })] },
+    { label: 'Hai lần bay', tip: 'Ném — kéo — ném — kéo', parts: [T('tossGap'), T('tossGap')] },
+    { label: 'Nhịp cả hội', tip: 'Mỗi người 1 phiến! Cửa chỉ mở 2,5 giây', parts: [T('drums', { plates: [0, 0, 0, 0], max: 4, open: 150 })] },
+    { label: 'BOSS · Tháp & Vực', tip: 'Tháp lên bục → nhịp → lao qua cửa → ném qua vực', parts: [T('drums', { plates: ['stack', 0, 0], max: 3, open: 150 }), T('tossGap')] }
+  ] },
+  { map: 'great-hall', name: 'Đại Sảnh Đường', hint: '🥁 PHIẾN NHỊP TRỐNG: cả đội phải tiếp đất cùng lúc!', toast: '3–2–1… NHẢY! Ai trễ nhịp phải khao bí ngô.', chapters: [
+    { label: 'Trống khai tiệc', tip: 'Học nhịp: 2 phiến, 1 nhịp', parts: [T('drums', { plates: [0, 0], max: 2 })] },
+    { label: 'Bàn giáo sư', tip: 'Lên bục rồi mới nhảy nhịp', parts: [T('drums', { plates: ['stack2', 0, 0], max: 3 })] },
+    { label: 'Cửa sảnh đóng nhanh', tip: 'Nhịp → chạy → ném qua vực trước khi cửa đóng', parts: [T('drums', { plates: [0, 0, 0, 0], max: 4, open: 110 }), T('tossGap')] },
+    { label: 'Băng chuyền đĩa', tip: 'Giữ vị trí trên băng chuyền rồi nhảy nhịp', parts: [T('conveyor', { len: 640 }), T('drums', { plates: [0, 0, 0], max: 3 })] },
+    { label: 'Giám Ngục dự tiệc', tip: 'SƯƠNG ĐUỔI! Nhịp dưới áp lực', fog: true, parts: [T('drums', { plates: [0, 0], max: 2 }), T('tossGap')] },
+    { label: 'BOSS · Trống trần nhà', tip: 'Ném 1 bạn lên phiến cao, cả đội nhảy cùng nhịp', parts: [T('drums', { plates: ['toss', 0, 0, 0], max: 4, open: 120 })] }
+  ] },
+  { map: 'charms', name: 'Lớp học Bùa chú', hint: '🎨 BỤC NHÀ: chỉ đứng được trên bục cùng màu khăn!', toast: 'Đỏ lên trước! Xanh đứng chờ ném!', chapters: [
+    { label: 'Cầu màu nhập môn', tip: 'Nhảy cóc: ném bạn sang bục màu của họ', parts: [T('house', { cycles: 2 })] },
+    { label: 'Bùa đồng bộ', tip: 'Nhảy cùng nhịp', parts: [T('drums', { plates: [0, 0], max: 2 })] },
+    { label: 'Cầu Wingardium', tip: '4 nhịp ném liên tục, rơi là đứt dây', parts: [T('house', { cycles: 4 })] },
+    { label: 'Cầu rồi vực', tip: 'Hết cầu màu là vực ném', parts: [T('house', { cycles: 3 }), T('tossGap')] },
+    { label: 'Bục giáo sư Flitwick', tip: 'Chồng vai + nhịp, cửa đóng sau 2,5 giây', parts: [T('drums', { plates: ['stack2', 0, 0], max: 3, open: 150 })] },
+    { label: 'BOSS · Cầu đũa phép quay', tip: 'Cầu màu dưới cánh quạt — canh nhịp mà ném', parts: [T('rotor'), T('house', { cycles: 4 })] }
+  ] },
+  { map: 'greenhouse', name: 'Nhà kính Thảo dược', hint: '💨 QUẠT BẬT/TẮT: nhảy vào đúng lúc gió thổi!', toast: 'Cây quạt hắt hơi theo nhịp. Đừng hắt hơi theo nó.', chapters: [
+    { label: 'Quạt hắt hơi', tip: 'Đợi gió rồi CÙNG nhảy', parts: [T('fanGap')] },
+    { label: 'Luống cây nhà', tip: 'Cầu màu', parts: [T('house', { cycles: 3 })] },
+    { label: 'Gió rồi trống', tip: 'Bay qua vực rồi nhảy nhịp', parts: [T('fanGap'), T('drums', { plates: [0, 0], max: 2 })] },
+    { label: 'Cầu rêu dài', tip: 'Cầu màu 4 nhịp', parts: [T('house', { cycles: 4 })] },
+    { label: 'Sương mù nhà kính', tip: 'SƯƠNG ĐUỔI! Quạt + vực ném', fog: true, parts: [T('fanGap'), T('tossGap')] },
+    { label: 'BOSS · Nấm bật tung', tip: 'Dậm bập bênh bắn bạn lên bục cao, rồi cầu màu', parts: [T('drums', { plates: ['cat', 0, 0], max: 3, open: 150 }), T('house', { cycles: 2 })] }
+  ] },
+  { map: 'stairs', name: 'Cầu thang Hogwarts', hint: '🧗 THÁP NGƯỜI: đưa 1 bạn lên bục cao rồi cả đội nhảy nhịp mở cửa!', toast: 'Cầu thang đổi hướng. Vai bạn thì không.', chapters: [
+    { label: 'Bậc chồng vai', tip: 'Tháp 2 + nhịp', parts: [T('drums', { plates: ['stack2', 0], max: 2 })] },
+    { label: 'Chiếu nghỉ thủng', tip: 'Ném — kéo — ném — kéo', parts: [T('tossGap'), T('tossGap')] },
+    { label: 'Tháp pháo đài', tip: '3 người trở lên: THÁP 3 TẦNG', parts: [T('drums', { plates: ['stack', 0, 0], max: 3 })] },
+    { label: 'Nhịp cầu thang', tip: 'Mỗi người 1 phiến, cửa 2 giây', parts: [T('drums', { plates: [0, 0, 0, 0], max: 4, open: 120 })] },
+    { label: 'Bục chỉ ném tới', tip: 'Chỉ cú NÉM mới lên nổi, rồi lao qua vực', parts: [T('drums', { plates: ['toss', 0], max: 2, open: 150 }), T('tossGap')] },
+    { label: 'BOSS · Hai pháo đài', tip: 'Tháp → nhịp → ném → nhịp', parts: [T('drums', { plates: ['stack', 0, 0], max: 3 }), T('drums', { plates: ['toss', 0, 0], max: 3, open: 150 })] }
+  ] },
+  { map: 'kitchen', name: 'Nhà bếp gia tinh', hint: '⚖️ BẬP BÊNH MÁY BẮN: dậm đầu này, bạn bay đầu kia!', toast: 'Bí ngô đang tuyển gia tinh làm bóng bowling.', chapters: [
+    { label: 'Thớt bập bênh', tip: 'Nhảy DẬM xuống đầu trái → bạn đứng đầu phải bay lên', parts: [T('drums', { plates: ['cat', 0], max: 2 })] },
+    { label: 'Bí ngô lăn', tip: 'Né bí ngô rồi ném nhau qua vực', parts: [T('pumpkins'), T('tossGap'), T('tossGap')] },
+    { label: 'Lò nướng bật tưng', tip: '3+ người: cần 2 người dậm CÙNG LÚC', parts: [T('pumpkins'), T('drums', { plates: ['cat', 0, 0], max: 3 })] },
+    { label: 'Bí ngô trên trống', tip: 'Nhảy nhịp giữa bí ngô đang lăn', parts: [T('pumpkins'), T('drums', { plates: [0, 0, 0], max: 3, open: 120 })] },
+    { label: 'Giám Ngục vào bếp', tip: 'SƯƠNG ĐUỔI! Bí ngô + 2 vực', fog: true, parts: [T('pumpkins'), T('tossGap'), T('tossGap')] },
+    { label: 'BOSS · Dây chuyền bắn', tip: 'Bắn → nhịp → bắn → nhịp', parts: [T('drums', { plates: ['cat', 0], max: 2 }), T('drums', { plates: ['cat', 0, 0], max: 3, open: 150 })] }
+  ] },
+  { map: 'chamber', name: 'Phòng Chứa Bí Mật', hint: '🪢 BÙA RÚT DÂY: dây ngắn lại, cả đội phải nhảy cùng nhịp!', toast: 'Dây ngắn. Kiên nhẫn còn ngắn hơn.', chapters: [
+    { label: 'Mương rắn', tip: 'Dây ngắn — nhảy từng đá CÙNG NHAU', parts: [T('shrink')] },
+    { label: 'Cửa rắn quay', tip: 'Canh cánh cửa rồi nhảy nhịp', parts: [T('rotor'), T('drums', { plates: [0, 0], max: 2 })] },
+    { label: 'Cống ngầm quay', tip: 'Dây ngắn dưới 2 cánh cửa quay', parts: [T('shrink', { rotors: true })] },
+    { label: 'Bẫy đá đôi', tip: 'Ném — né — ném', parts: [T('tossGap'), T('rotor'), T('tossGap')] },
+    { label: 'Tượng Slytherin', tip: 'Cửa 1,8 giây sau cánh quạt', parts: [T('rotor'), T('drums', { plates: [0, 0, 0], max: 3, open: 110 })] },
+    { label: 'BOSS · Hàm Tử Xà', tip: 'Dây ngắn + 2 cánh quay + vực ném', parts: [T('shrink', { rotors: true }), T('tossGap')] }
+  ] },
+  { map: 'courtyard', name: 'Sân lâu đài Hogwarts', hint: '🌫️ FINALE: sương Giám Ngục đuổi · vớ SNITCH bay!', toast: 'Lấy vớ, kéo bạn, cùng tự do!', snitch: true, par: 300, chapters: [
+    { label: 'Giám Ngục ở cổng', tip: 'SƯƠNG ĐUỔI! Né bí ngô, ném qua vực', fog: true, parts: [T('pumpkins'), T('tossGap'), T('tossGap')] },
+    { label: 'Cầu bốn nhà', tip: 'Cầu màu', parts: [T('house', { cycles: 3 })] },
+    { label: 'Máy bắn sân trường', tip: 'Dậm → bay → nhịp', parts: [T('drums', { plates: ['cat', 0, 0], max: 3 })] },
+    { label: 'Tháp đồng hồ', tip: 'Ném lên bục, cửa 2 giây', parts: [T('drums', { plates: ['toss', 0, 0], max: 3, open: 120 })] },
+    { label: 'Hành lang bão', tip: 'SƯƠNG + DÂY NGẮN + CÁNH QUẠT', fog: true, parts: [T('shrink', { rotors: true })] },
+    { label: 'BOSS · Vớ Snitch', tip: 'Tháp → nhịp → NÉM bạn chộp vớ đang bay', parts: [T('drums', { plates: ['stack', 0, 0, 0], max: 4 })] }
+  ] }
+];
+
+function buildV2Level(spec) {
+  const lv = {
+    map: spec.map, name: spec.name, hint: spec.hint, toast: spec.toast, v2: true,
+    standingDeath: false, respawnTimer: V2.respawn, ropeFray: V2.ropeFray, par: spec.par || 240,
+    platforms: [], pumpkins: [], rotors: [], fans: [], springs: [], iceZones: [], seesaws: [], movers: [],
+    checkpoints: [], stops: [], conveyors: [], crumbling: [], spikes: [],
+    blocks: [], drums: [], houseBridges: [], catapults: [], fogs: [], shrinkZones: [], tossGaps: []
+  };
+  const gaps = [];
+  let cx = 300;
+  spec.chapters.forEach((ch, i) => {
+    if (i) lv.checkpoints.push(cx + 20);
+    lv.stops.push({ x: cx + 60, label: ch.label, kind: ch.parts[0].k, instruction: ch.tip });
+    let cur = cx + 320;
+    for (const part of ch.parts) cur = PARTS[part.k](lv, gaps, cur, part);
+    const end = Math.max(cur + 120, cx + 900);
+    if (ch.fog) lv.fogs.push({ start: cx + 320, end });
+    cx = end;
+  });
+  gaps.sort((a, b) => a[0] - b[0]);
+  let fs = 0;
+  for (const [a, b] of gaps) { lv.platforms.push([fs, 570, a - fs, 90]); fs = b; }
+  lv.key = [cx + 120, 515];
+  lv.door = [cx + 300, 498];
+  lv.width = cx + 420;
+  lv.platforms.push([fs, 570, lv.width - fs, 90]);
+  if (spec.snitch) lv.snitch = { x: lv.key[0], y: 400, ax: 140, ay: 25 };
+  return lv;
+}
+
+const levels = [...v2Specs.map(buildV2Level), ...classicLevels];
+const nHouses = room => Math.max(1, Math.min(4, room.players.length));
+function fanOn(f, t) { return !f[4] || Math.sin((t || 0) / f[4] * Math.PI) > 0; }
 
 function worldWidth(room) { return levels[room.level].width; }
 
@@ -210,6 +400,8 @@ function spawn(room) {
 }
 
 function init(room) {
+  // Canonical house = slot index, so elf colour always matches house-platform colour.
+  room.players.forEach((p, i) => { p.house = i; });
   room.checkpoint = 80;
   room.checkpointsPassed = 0;
   room.runDeaths = 0;
@@ -226,6 +418,8 @@ function init(room) {
   room.deaths = room.deaths || 0;
   room.pranks = 0;
   room.bumps = 0;
+  room.drumHits = 0;
+  room.dangleTotal = 0;
   room.variant = Math.floor(Math.random() * 3);
   room.started = Date.now();
   room.crumblingPlatforms = {};
@@ -235,6 +429,52 @@ function init(room) {
       room.crumblingPlatforms[idx] = { crumbling: false, collapsed: false, timer: 0 };
     });
   }
+  room.drumState = (lv.drums || []).map(() => ({ hits: {}, open: false, until: 0 }));
+  room.catState = (lv.catapults || []).map(() => ({ stomps: {}, launch: -999 }));
+  room.fogState = (lv.fogs || []).map(f => ({ active: false, done: false, x: f.start - 480 }));
+}
+
+// After a wipe: fog chases restart and gates beyond the respawn checkpoint close again.
+function resetV2(room) {
+  const lv = levels[room.level];
+  (lv.fogs || []).forEach((f, i) => {
+    const st = room.fogState && room.fogState[i];
+    if (st && !st.done) Object.assign(st, { active: false, x: f.start - 480 });
+  });
+  (lv.drums || []).forEach((d, i) => {
+    if (room.drumState && room.drumState[i] && d.gate.x > (room.checkpoint || 80)) room.drumState[i] = { hits: {}, open: false, until: 0 };
+  });
+  (room.catState || []).forEach(st => { st.stomps = {}; });
+}
+
+function resetCrumbling(room) {
+  const lv = levels[room.level];
+  room.crumblingPlatforms = {};
+  (lv.crumbling || []).forEach((c, idx) => {
+    room.crumblingPlatforms[idx] = { crumbling: false, collapsed: false, timer: 0 };
+  });
+}
+
+// Any death wipes the whole team: everyone respawns together at the last checkpoint.
+function teamWipe(room) {
+  const lv = levels[room.level];
+  const timer = lv.respawnTimer || HARD.respawnTimer;
+  room.deaths = (room.deaths || 0) + 1;
+  room.runDeaths = (room.runDeaths || 0) + 1;
+  room.teamRespawn = timer;
+  room.players.forEach(p => {
+    p.dead = timer;
+    p.dangleTicks = 0;
+    p.keys = {};
+    p.kickX = 0;
+    p.vx = 0;
+    p.vy = 0;
+    p.dangling = false;
+    p.hauling = false;
+    p.stackHeight = 0;
+    p.standingTicks = 0;
+  });
+  resetV2(room);
 }
 
 function overlap(a, b) {
@@ -278,8 +518,24 @@ function obstacles(room) {
       w: 40, h: 40, phase: t / 10 + i
     })),
     rotors: (lv.rotors || []).map(([x, y, r], i) => ({ x, y, r, angle: t / (35 + i * 7) + v })),
-    slope: lv.seesaw ? Math.sin(t / 75 + v) * 0.4 : 0
+    slope: lv.seesaw ? Math.sin(t / 75 + v) * 0.4 : 0,
+    keyPos: lv.snitch
+      ? { x: lv.snitch.x + Math.sin(t / 90) * lv.snitch.ax, y: lv.snitch.y + Math.sin(t / 47) * lv.snitch.ay }
+      : { x: lv.key[0], y: lv.key[1] }
   };
+}
+
+function activePlates(d, n) {
+  return Math.min(d.plates.length, Math.max(d.min, Math.min(d.max, n)));
+}
+
+function plateY(lv, pl, n) {
+  return pl.block != null ? 570 - blockHeight(lv.blocks[pl.block].kind, n) : 570;
+}
+
+// House platforms are only solid for elves whose slot colour matches.
+function usable(b, p, nh) {
+  return b.house == null || b.house === ((p.house || 0) % nh);
 }
 
 function solidsFor(room) {
@@ -306,6 +562,21 @@ function solidsFor(room) {
       }
     });
   }
+  const n = room.players ? room.players.length : 2;
+  (lv.blocks || []).forEach(bk => s.push({ x: bk.x, y: 570 - blockHeight(bk.kind, n), w: bk.w, h: 18, block: true }));
+  (lv.catapults || []).forEach((c, i) => s.push({ x: c.x, y: c.y, w: c.w, h: 14, catapult: i }));
+  (lv.drums || []).forEach((d, i) => {
+    const st = room.drumState && room.drumState[i];
+    if (!st || !st.open) s.push({ x: d.gate.x, y: 0, w: d.gate.w, h: 570, gate: i });
+  });
+  const nh = Math.max(1, Math.min(4, n));
+  (lv.houseBridges || []).forEach(hb => {
+    for (let c = 0; c < nh; c++) {
+      for (let k = 0; k < hb.cycles; k++) {
+        s.push({ x: hb.x + 40 + Math.round(c * V2.houseSpacing / nh) + k * V2.houseSpacing, y: 530 - (c % 2) * 50, w: 50, h: 18, house: c });
+      }
+    }
+  });
   return s;
 }
 
@@ -329,11 +600,15 @@ function tick(room) {
   if (room.teamRespawn > 0) {
     room.teamRespawn--;
     ps.forEach(p => p.dead = room.teamRespawn);
-    if (!room.teamRespawn) spawn(room);
+    if (!room.teamRespawn) {
+      spawn(room);
+      resetCrumbling(room);
+    }
     return;
   }
 
   if (lv.crumbling && room.crumblingPlatforms) {
+    let crushed = false;
     lv.crumbling.forEach((c, idx) => {
       const st = room.crumblingPlatforms[idx];
       if (!st) return;
@@ -344,27 +619,72 @@ function tick(room) {
       }
       if (st.crumbling && !st.collapsed && room.ticks - st.timer > HARD.maxPlatformTime) {
         st.collapsed = true;
-        room.deaths++;
-        room.runDeaths++;
-        ps.forEach(p => {
-          if (p.ground && p.x + PW > c[0] && p.x < c[0] + c[2] && Math.abs(p.y + PH - c[1]) < 20) {
-            p.dead = 100;
-          }
-        });
+        if (onPl) crushed = true;
       }
     });
+    if (crushed) {
+      teamWipe(room);
+      return;
+    }
   }
 
   const solids = solidsFor(room);
   room.movingY = solids.find(b => b.moving)?.y;
   const obs = obstacles(room);
   const anyGrounded = ps.some(p => p.ground && p.y < 580);
+  const n = ps.length;
+  const nh = nHouses(room);
+
+  // Timed drum gates close again once nobody is standing inside them.
+  (lv.drums || []).forEach((d, i) => {
+    const st = room.drumState && room.drumState[i];
+    if (st && st.open && st.until >= 0 && room.ticks > st.until) {
+      const inside = ps.some(p => p.dead <= 0 && p.x + PW > d.gate.x && p.x < d.gate.x + d.gate.w);
+      if (!inside) room.drumState[i] = { hits: {}, open: false, until: 0 };
+    }
+  });
+
+  // Dementor fog: triggered when someone enters the chase, advances steadily, wipes laggards.
+  for (let i = 0; i < (lv.fogs || []).length; i++) {
+    const f = lv.fogs[i], st = room.fogState && room.fogState[i];
+    if (!st || st.done) continue;
+    const alive = ps.filter(p => p.dead <= 0);
+    if (!st.active && alive.some(p => p.x >= f.start)) st.active = true;
+    if (!st.active) continue;
+    st.x = Math.min(f.end, st.x + V2.fogSpeed(n));
+    if (alive.every(p => p.x >= f.end)) { st.done = true; st.active = false; }
+    else if (alive.some(p => p.x + PW / 2 < st.x)) { teamWipe(room); return; }
+  }
+
+  const landed = (p, vyPre) => {
+    const feet = p.y + PH;
+    (lv.drums || []).forEach((d, i) => {
+      const st = room.drumState[i];
+      if (!st || st.open) return;
+      const k = activePlates(d, n);
+      for (let j = 0; j < k; j++) {
+        const pl = d.plates[j];
+        if (Math.abs(feet - plateY(lv, pl, n)) < 2 && p.x + PW > pl.x + 4 && p.x < pl.x + pl.w - 4) {
+          st.hits[j] = room.ticks;
+          room.drumHits = (room.drumHits || 0) + 1;
+          let all = true;
+          for (let m = 0; m < k; m++) if (st.hits[m] == null || room.ticks - st.hits[m] > V2.window) all = false;
+          if (all) { st.open = true; st.until = d.open ? room.ticks + d.open : -1; st.openedAt = room.ticks; }
+        }
+      }
+    });
+    (lv.catapults || []).forEach((c, i) => {
+      const cxp = p.x + PW / 2;
+      if (Math.abs(feet - c.y) < 2 && cxp >= c.x && cxp < c.x + c.w / 2 && vyPre >= 3) room.catState[i].stomps[p.id] = room.ticks;
+    });
+  };
 
   for (const p of [...ps].sort((a, b) => b.y - a.y)) {
     if (p.dead > 0) continue;
 
     const oldX = p.x;
     const oldY = p.y;
+    const wasGround = p.ground;
 
     p.invincible = Math.max(0, p.invincible - 1);
     p.spin = Math.max(0, p.spin - 1);
@@ -372,25 +692,26 @@ function tick(room) {
     p.bumpCooldown = Math.max(0, (p.bumpCooldown || 0) - 1);
 
     p.onMountain = isOnMountain(p, lv);
-
-    if (p.ground && Math.abs(p.y - (p.lastY || p.y)) < 0.1) {
-      p.standingTicks++;
-    } else {
-      p.standingTicks = 0;
-    }
     p.lastY = p.y;
 
-    if (p.standingTicks > HARD.standingDeathTicks && p.ground) {
-      p.dead = 100;
-      room.deaths++;
-      room.runDeaths++;
-      continue;
+    if (lv.standingDeath && (p.standingTicks || 0) > HARD.standingDeathTicks && p.ground) {
+      teamWipe(room);
+      return;
     }
 
     p.dangling = !p.ground && p.y > 545 && anyGrounded;
     if (p.dangling) {
       p.y = Math.min(H + 50, p.y);
       if (p.y >= H + 50) p.vy = Math.min(0, p.vy);
+      // Rope fray: dangle too long and the rope snaps.
+      p.dangleTicks = (p.dangleTicks || 0) + 1;
+      room.dangleTotal = (room.dangleTotal || 0) + 1;
+      if (lv.ropeFray && p.dangleTicks > lv.ropeFray) {
+        teamWipe(room);
+        return;
+      }
+    } else {
+      p.dangleTicks = 0;
     }
 
     for (const b of obs.rotors) {
@@ -453,7 +774,9 @@ function tick(room) {
     }
     p.tossHeld = !!keys.toss;
 
-    for (const [x, y, w, d] of lv.fans || []) {
+    for (const f of lv.fans || []) {
+      if (!fanOn(f, room.ticks)) continue;
+      const [x, y, w, d] = f;
       if (p.x + PW > x && p.x < x + w && p.y + PH > y && p.y < 570) {
         p.kickX = Math.max(-10, Math.min(10, p.kickX + d * 1));
         if (p.y > y) p.vy -= 1.2;
@@ -477,9 +800,10 @@ function tick(room) {
     p.x = Math.max(8, Math.min(lv.width - PW - 8, p.x + p.vx + p.kickX));
 
     for (const b of solids) {
-      if (b.slope) continue;
+      if (b.slope || !usable(b, p, nh)) continue;
       if (overlap({ x: p.x, y: p.y, w: PW, h: PH }, b) && (oldX + PW <= b.x + 1 || oldX >= b.x + b.w - 1)) {
-        p.x = dir > 0 ? b.x - PW : b.x + b.w;
+        // Push back to the side we came from (not the input direction) so kicks/ropes can't tunnel through walls.
+        p.x = oldX + PW <= b.x + 1 ? b.x - PW : b.x + b.w;
         p.kickX = -p.kickX * 0.1;
         p.vx = 0;
       }
@@ -495,6 +819,7 @@ function tick(room) {
     }
 
     p.vy = Math.min(HARD.maxFallSpeed, p.vy + HARD.gravity);
+    const vyPre = p.vy;
     p.y += p.vy;
     p.ground = false;
 
@@ -515,13 +840,12 @@ function tick(room) {
     }
 
     for (const b of solids) {
-      if (p.x + PW <= b.x || p.x >= b.x + b.w) continue;
+      if (p.x + PW <= b.x || p.x >= b.x + b.w || !usable(b, p, nh)) continue;
       const y = top(b, p);
       if (p.vy >= 0 && oldY + PH <= y + 8 && p.y + PH >= y) {
         p.y = y - PH;
         p.vy = 0;
         p.ground = true;
-        p.standingTicks = 0;
       } else if (!b.slope && p.vy < 0 && oldY >= b.y + b.h && p.y < b.y + b.h) {
         p.y = b.y + b.h;
         p.vy = 0;
@@ -535,7 +859,6 @@ function tick(room) {
           p.y = q.y - PH;
           p.vy = 0;
           p.ground = true;
-          p.standingTicks = 0;
         } else if (q.vy < 0 && Math.abs(oldY + PH - q.y) <= 16) {
           p.y = q.y - PH;
           p.vy = q.vy;
@@ -543,6 +866,8 @@ function tick(room) {
         }
       }
     }
+
+    if (p.ground && !wasGround) landed(p, vyPre);
 
     for (const [x, y, w] of lv.springs || []) {
       if (p.ground && p.x + PW > x && p.x < x + w && Math.abs(p.y + PH - y) < 5) {
@@ -591,10 +916,31 @@ function tick(room) {
       }
     }
 
-    if (!room.key && Math.hypot(p.x + 15 - lv.key[0], p.y + 22 - lv.key[1]) < 80) {
+    if (!room.key && Math.hypot(p.x + 15 - obs.keyPos.x, p.y + 22 - obs.keyPos.y) < (lv.snitch ? 42 : 80)) {
       room.key = true;
     }
+
+    // Standing Death timer: counts only while grounded and not moving.
+    // Exempt: tower base (someone standing on you), hauling the rope, spawn grace, waiting at the door with the sock.
+    const moved = Math.abs(p.x - oldX) > 0.25 || Math.abs(p.y - oldY) > 0.25;
+    const supporting = ps.some(q => q !== p && q.dead <= 0 && Math.abs(q.y + PH - p.y) <= 6 && q.x + PW > p.x + 3 && q.x < p.x + PW - 3);
+    const atDoor = room.key && p.x > lv.door[0] - 95;
+    const exempt = supporting || p.hauling || p.invincible > 0 || atDoor;
+    p.standingTicks = (p.ground && !moved && !exempt) ? (p.standingTicks || 0) + 1 : 0;
   }
+
+  // Catapults: enough stomps on the left half within the window launch everyone on the right half.
+  (lv.catapults || []).forEach((c, i) => {
+    const st = room.catState[i];
+    const need = n >= 3 ? 2 : 1;
+    const recent = Object.values(st.stomps).filter(t => room.ticks - t <= V2.window).length;
+    if (recent < need) return;
+    const riders = ps.filter(p => p.dead <= 0 && p.ground && Math.abs(p.y + PH - c.y) < 2 && p.x + PW / 2 >= c.x + c.w / 2 && p.x + PW / 2 <= c.x + c.w + 4);
+    if (!riders.length) return;
+    riders.forEach(p => { p.vy = V2.launchVy; p.ground = false; p.kickX = 3; p.spin = 30; });
+    st.launch = room.ticks;
+    st.stomps = {};
+  });
 
   for (const q of ps) {
     if (!q.ground || q.y >= 580) {
@@ -646,18 +992,7 @@ function tick(room) {
   constrainRopes(room, solids.filter(b => !b.slope));
 
   if (ps.every(p => p.dead > 0 || p.y > H + 20)) {
-    room.teamRespawn = HARD.respawnTimer;
-    ps.forEach(p => {
-      p.dead = HARD.respawnTimer;
-      p.keys = {};
-      p.kickX = 0;
-      p.vx = 0;
-      p.vy = 0;
-      p.dangling = false;
-      p.hauling = false;
-      p.stackHeight = 0;
-      p.standingTicks = 0;
-    });
+    teamWipe(room);
     return;
   }
 
@@ -677,17 +1012,22 @@ function tick(room) {
 
 function constrainRopes(room, solids) {
   const ps = room.players.filter(p => p.dead <= 0);
-  const rest = HARD.ropeLength;
-  const max = HARD.ropeMax;
+  const lv = levels[room.level];
+  const nh = nHouses(room);
+  const limits = (a, b) => {
+    const mid = (a.x + b.x) / 2;
+    const shrunk = (lv.shrinkZones || []).some(([z1, z2]) => mid >= z1 && mid <= z2);
+    return shrunk ? [V2.shrinkRest, V2.shrinkMax] : [HARD.ropeLength, HARD.ropeMax];
+  };
 
   function move(p, dx, dy) {
     const oldY = p.y;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 3));
     for (let i = 0; i < steps; i++) {
       const nx = Math.max(8, Math.min(worldWidth(room) - PW - 8, p.x + dx / steps));
-      if (!solids.some(b => overlap({ x: nx, y: p.y, w: PW, h: PH }, b))) p.x = nx;
+      if (!solids.some(b => usable(b, p, nh) && overlap({ x: nx, y: p.y, w: PW, h: PH }, b))) p.x = nx;
       const ny = p.y + dy / steps;
-      if (!solids.some(b => overlap({ x: p.x, y: ny, w: PW, h: PH }, b))) p.y = ny;
+      if (!solids.some(b => usable(b, p, nh) && overlap({ x: p.x, y: ny, w: PW, h: PH }, b))) p.y = ny;
     }
     if (p.y < oldY - 0.1) {
       p.ground = false;
@@ -698,6 +1038,7 @@ function constrainRopes(room, solids) {
   for (let i = 0; i < ps.length - 1; i++) {
     const a = ps[i];
     const b = ps[i + 1];
+    const [rest] = limits(a, b);
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const d = Math.hypot(dx, dy);
@@ -739,6 +1080,7 @@ function constrainRopes(room, solids) {
     for (let i = 0; i < ps.length - 1; i++) {
       const a = ps[i];
       const b = ps[i + 1];
+      const [, max] = limits(a, b);
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const d = Math.hypot(dx, dy);
@@ -760,13 +1102,23 @@ function constrainRopes(room, solids) {
 function scoring(r) {
   const won = r.status === 'won';
   const seconds = (r.ticks || 0) / 60;
-  const checkpoints = (r.checkpointsPassed || 0) * 200;
+  const lv = levels[r.level] || levels[0];
+  const n = (r.players || []).length || 2;
+  // Checkpoint pool is 2200 regardless of how many flags a map has (classic: 11 × 200).
+  const checkpoints = Math.round((r.checkpointsPassed || 0) * 2200 / Math.max(1, lv.checkpoints.length));
   const sock = r.key ? 500 : 0;
   const finish = won ? 1000 : 0;
-  const speed = won ? Math.max(0, 1000 - Math.floor(seconds * 3.5)) : 0;
+  // Speed bonus vs a per-level par time (classic: ~width/100 s).
+  const par = lv.par || Math.round(lv.width / 100);
+  const speed = won ? Math.max(0, 1000 - Math.floor(Math.max(0, seconds - par) * 3)) : 0;
   const care = won ? Math.max(0, 600 - (r.runDeaths || 0) * 50) : 0;
-  const total = checkpoints + sock + finish + speed + care;
-  return { checkpoints, sock, finish, speed, care, total, stars: won ? (total >= 5000 ? 3 : total >= 4200 ? 2 : 1) : 0 };
+  // Badges (V2 maps): perfect sync = drums opened with few wasted landings; nobody ever dangled.
+  const required = (lv.drums || []).reduce((s, d) => s + activePlates(d, n), 0);
+  const syncBadge = won && required > 0 && (r.drumHits || 0) <= required * 2;
+  const ropeBadge = won && !!lv.v2 && !(r.dangleTotal || 0);
+  const bonus = (syncBadge ? 250 : 0) + (ropeBadge ? 250 : 0);
+  const total = checkpoints + sock + finish + speed + care + bonus;
+  return { checkpoints, sock, finish, speed, care, bonus, badges: { sync: syncBadge, rope: ropeBadge }, total, stars: won ? (total >= 5000 ? 3 : total >= 4200 ? 2 : 1) : 0 };
 }
 
 function snapshot(r) {
@@ -775,6 +1127,7 @@ function snapshot(r) {
     status: r.status,
     score: scoring(r),
     runDeaths: r.runDeaths || 0,
+    checkpointsPassed: r.checkpointsPassed || 0,
     seconds: (r.ticks || 0) / 60,
     spectatorCount: (r.spectators || []).filter(p => p.connected).length,
     level: r.level,
@@ -793,6 +1146,11 @@ function snapshot(r) {
     elapsed: r.elapsed,
     obstacles: obstacles(r),
     crumblingPlatforms: r.crumblingPlatforms,
+    drumState: r.drumState || [],
+    catState: (r.catState || []).map(c => ({ launch: c.launch })),
+    fogState: r.fogState || [],
+    drumHits: r.drumHits || 0,
+    dangleTotal: r.dangleTotal || 0,
     players: r.players.map(({ id, name, x, y, vx, vy, dead, ready, connected, house, spin, facing, invincible, dangling, hauling, stackHeight, onMountain, standingTicks }) => ({
       id, name, x, y, vx, vy, dead, ready, connected, house, spin, facing, invincible,
       dangling: !!dangling, hauling: !!hauling, stackHeight, onMountain, standingTicks
@@ -801,6 +1159,6 @@ function snapshot(r) {
   };
 }
 
-const api = { W, H, PW, PH, levels, init, tick, snapshot, constrainRopes, obstacles, solidsFor, scoring, HARD, checkRotorCollision };
+const api = { W, H, PW, PH, levels, init, tick, snapshot, constrainRopes, obstacles, solidsFor, scoring, HARD, V2, checkRotorCollision, blockHeight, activePlates, plateY, fanOn, nHouses };
 if (typeof module !== 'undefined') module.exports = api; else window.ElfEngine = api;
 })();

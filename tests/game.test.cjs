@@ -1,6 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../engine.cjs');
 const HARD = E.HARD;
+const C = E.levels.findIndex(l=>l.classic); // classic (pre-V2) maps keep their original HARD MODE tests
 
 function room(n=2,level=0){const r={code:'TEST',level,host:'p0',players:Array.from({length:n},(_,i)=>({id:'p'+i,name:'Elf '+i,house:i,connected:true})),deaths:0};E.init(r);r.variant=0;return r;}
 function advance(r,n){for(let i=0;i<n;i++)E.tick(r);}
@@ -8,8 +9,11 @@ function advance(r,n){for(let i=0;i<n;i++)E.tick(r);}
 // Test 1: 8 maps có cấu trúc unique
 test('eight maps have unique locations and layouts',()=>{
  const fs=require('node:fs'),path=require('node:path');
- assert.equal(new Set(E.levels.map(l=>l.map)).size,8);
- assert.equal(new Set(E.levels.map(l=>JSON.stringify(l.platforms))).size,8);
+ const v2=E.levels.filter(l=>l.v2),classic=E.levels.filter(l=>l.classic);
+ assert.equal(v2.length,8);assert.equal(classic.length,8);
+ assert.equal(new Set(v2.map(l=>l.map)).size,8);
+ assert.equal(new Set(classic.map(l=>JSON.stringify(l.platforms))).size,8);
+ assert.equal(new Set(v2.map(l=>JSON.stringify(l.platforms))).size,8);
  const source=fs.readFileSync(path.join(__dirname,'../dist/map-scenes.js'),'utf8');
  E.levels.forEach(l=>assert.ok(source.includes("'"+l.map+"'"),l.name));
 });
@@ -49,7 +53,7 @@ test('toss works',()=>{
 // Test 5: Pumpkins and rotors
 test('pumpkins and rotors knock players',()=>{
  for(const level of [5,6]){
-  const r=room(2,level),p=r.players[0];
+  const r=room(2,C+level),p=r.players[0];
   p.invincible=0;
   const obs=E.obstacles({...r,ticks:1});
   if(level===5){
@@ -69,7 +73,7 @@ test('pumpkins and rotors knock players',()=>{
 
 // Test 6: Springs
 test('springs bounce players',()=>{
- const r=room(2,2);
+ const r=room(2,C+2);
  r.players[0].x=390;
  r.players[0].ground=true;
  E.tick(r);
@@ -78,8 +82,8 @@ test('springs bounce players',()=>{
 
 // Test 7: Checkpoint
 test('checkpoint saves work',()=>{
- const r=room(2,7);
- const cp=E.levels[7].checkpoints[0];
+ const r=room(2,C+7);
+ const cp=E.levels[C+7].checkpoints[0];
  r.players.forEach((p,i)=>{p.x=cp+5+i*36;p.y=526;});
  E.tick(r);
  assert.equal(r.checkpoint,cp);
@@ -89,7 +93,8 @@ test('checkpoint saves work',()=>{
 test('sock can be collected',()=>{
  for(let level=0;level<E.levels.length;level++){
   const r=room(2,level),l=E.levels[level];
-  r.players.forEach((p,i)=>{p.x=l.key[0]-15-i*32;p.y=l.key[1]-22;});
+  const kp=E.obstacles(r).keyPos;
+  r.players.forEach((p,i)=>{p.x=kp.x-15-i*32;p.y=kp.y-22;});
   E.tick(r);
   assert.equal(r.key,true);
  }
@@ -106,7 +111,7 @@ test('snapshots work correctly',()=>{
 
 // Test 10: Dangling and hauling
 test('dangling and hauling works',()=>{
- const r=room(2,7);
+ const r=room(2,C+7);
  const[a,b]=r.players;
  a.x=485;a.y=526;a.ground=true;
  b.x=555;b.y=590;b.ground=false;
@@ -122,7 +127,7 @@ test('dangling and hauling works',()=>{
 
 // Test 11: Maps dimensions
 test('maps have correct dimensions',()=>{
- for(const l of E.levels){
+ for(const l of E.levels.filter(l=>l.classic)){
   assert.ok(l.width>11000);
   assert.equal(l.stops.length,12);
   assert.equal(l.checkpoints.length,11);
@@ -131,8 +136,8 @@ test('maps have correct dimensions',()=>{
 
 // Test 12: Crumbling platforms
 test('crumbling platforms work',()=>{
- const r=room(2,0);
- const l=E.levels[0];
+ const r=room(2,C);
+ const l=E.levels[C];
  if(l.crumbling && l.crumbling.length>0){
   const c=l.crumbling[0];
   r.players[0].x=c[0]+10;
@@ -145,7 +150,7 @@ test('crumbling platforms work',()=>{
 
 // Test 13: Obstacles move
 test('obstacles move correctly',()=>{
- const r=room(2,5);
+ const r=room(2,C+5);
  const obs1=E.obstacles({...r,ticks:0});
  const obs2=E.obstacles({...r,ticks:60});
  assert.ok(Math.abs(obs1.pumpkins[0].x - obs2.pumpkins[0].x) > 0);
@@ -154,7 +159,7 @@ test('obstacles move correctly',()=>{
 // Test 14: Narrow platforms
 test('platforms are narrow',()=>{
  const r=room();
- const l=E.levels[0];
+ const l=E.levels[C];
  const narrow=l.platforms.filter(p=>p[2]<80);
  assert.ok(narrow.length>0);
 });
@@ -162,7 +167,7 @@ test('platforms are narrow',()=>{
 // Test 15: Wide gaps
 test('maps have wide gaps',()=>{
  const r=room();
- const l=E.levels[0];
+ const l=E.levels[C];
  assert.ok(l.width>20000);
 });
 
@@ -181,14 +186,14 @@ test('scoring works',()=>{
 
 // Test 18: 3-Player Human Tower Bastion Wall
 test('3-player tower bastion wall requires 3-player stack',()=>{
- const lv=E.levels[4];
+ const lv=E.levels[C+4];
  assert.ok(lv.walls && lv.walls.length>0);
  const wall=lv.walls[0];
  assert.equal(wall.h, 140);
  assert.equal(wall.y, 430);
 
  function testStack(count){
-  const r={code:'TEST',level:4,host:'p0',players:Array.from({length:count},(_,i)=>({id:'p'+i,house:i,connected:true})),deaths:0};
+  const r={code:'TEST',level:C+4,host:'p0',players:Array.from({length:count},(_,i)=>({id:'p'+i,house:i,connected:true})),deaths:0};
   E.init(r);
   for(let i=0;i<count;i++){
    r.players[i].x=wall.x-30;

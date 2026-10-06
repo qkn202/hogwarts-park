@@ -3,11 +3,45 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-blue.svg)]()
-[![Build Status](https://img.shields.io/badge/Tests-24%2F24%20Passing-brightgreen.svg)]()
+[![Build Status](https://img.shields.io/badge/Tests-51%2F51%20Passing-brightgreen.svg)]()
 
 > **Một chiếc vớ. Cả đội tự do.**  
 > Party game co-op platformer 2–8 người chơi kết nối bằng sợi dây thừng ma thuật, lấy cảm hứng từ *Pico Park*, *Chained Together* kết hợp thế giới phù thủy Hogwarts.  
 > **Chế độ chơi: VERY HARD** — Cực kỳ thử thách, đòi hỏi sự phối hợp nhịp nhàng và kỹ năng Pro-Gamer!
+
+---
+
+## 📝 Nhật ký thay đổi (Changelog)
+
+### Hôm nay — Thứ Ba, 06/10/2026
+
+**1. Map V2 “Đồng đội bắt buộc” (màn 01–08)** — thiết kế lại toàn bộ 8 map cho nhiều người cùng phối hợp, xem chi tiết ở mục [Map V2](#-map-v2--đồng-đội-bắt-buộc-màn-0108).
+- Mỗi map 6 chương dày đặc, 5 cờ nghỉ, map ngắn hơn nhưng không có đoạn “chạy không”.
+- Cơ chế mới: vực ném, phiến nhịp trống + cửa hẹn giờ, bục chồng vai / tháp người / ném lên / bắn lên, bập bênh máy bắn, cầu màu nhà, quạt bật/tắt, bùa rút dây, sương Giám Ngục đuổi, dây sờn, vớ Snitch bay.
+- Độ khó tự co giãn theo số người (số phiến trống, độ cao tháp, số màu cầu, tốc độ sương).
+- 8 map cũ được giữ nguyên ở màn 09–16 (“Cổ điển · …”, đủ HARD MODE).
+- Giao diện: vẽ đủ vật cản mới theo đúng hitbox engine, phiến trống sáng theo nhịp, cửa khóa “🔒 N NHỊP” + đồng hồ đếm ngược, sương tối + rung màn hình, âm thanh khi dậm trống / mở cửa / bắn, huy hiệu ở màn kết quả.
+- Điểm: quỹ cờ nghỉ 2200 chia theo số cờ, par time theo map, huy hiệu 🥁 Nhịp hoàn hảo / 🪢 Không ai treo dây (+250 mỗi cái).
+- Test mới `tests/maps_v2.test.cjs`: bot chạy engine thật, chứng minh mọi chướng ngại **1 người không qua được, đúng combo đồng đội thì qua được**.
+
+**2. Audit & sửa lỗi**
+- Một người chết = cả đội hồi sinh tại điểm nghỉ; Standing Death hoạt động đúng (miễn khi đang đỡ bạn, kéo dây, cầm vớ ở cửa); sàn sập hồi lại khi hồi sinh.
+- Chống xuyên tường khi bị dây/cú đẩy kéo mạnh; thưởng tốc độ theo par time.
+- Bảo mật: sửa lỗi XSS tên người chơi trong sảnh, lọc dữ liệu phím gửi qua mạng.
+- Online: người mới chỉ vào được khi đang ở sảnh, đổi chủ phòng không mất tiến độ, tự loại người mất kết nối sau 15s (cả LAN), chủ phòng tạm dừng không còn đóng băng cả phòng.
+- Hình vẽ khớp hitbox: bục di động, bập bênh, cánh quạt 4 lưỡi; sàn sập và bệ đỡ giờ đã hiện ra.
+- Tháp người 3 tầng vượt tường thành (3-player bastion wall) kèm kiểm chứng vật lý.
+- Test: 36 → **51 test** (thêm `tests/audit.test.cjs`, `tests/maps_v2.test.cjs`).
+
+### Hôm qua — Thứ Hai, 05/10/2026
+
+- Ra mắt bản co-op platformer Hogwarts nhiều chương với vật lý dây treo kiểu *Chained Together*; cấu hình deploy tĩnh lên Vercel.
+- Vực sâu: chỉ wipe khi **cả đội** cùng rơi, người đang treo có thể được kéo lên; nới rộng vực để tăng thử thách.
+- Vật cản đẩy lùi không xuyên qua; chương dài 1800px; tháp cao hơn, camera bám theo cả đội.
+- Multiplayer online toàn cầu qua **Supabase Realtime** + Vercel.
+- Chống đi xuyên qua nhau, cho đứng lên đầu nhau và nhảy cùng nhau; chặn xuyên qua cánh quạt / khối đá.
+- Cơ chế Pro-Gamer: leo tháp thẳng đứng, đu dây con lắc, mỏ neo, đồng hồ nguy hiểm vực sâu.
+- Cập nhật README: cơ chế, 8 chương, luật tính điểm.
 
 ---
 
@@ -38,6 +72,8 @@
 ### 2. Standing Death (Đứng yên = Tử nạn)
 - Đồng hồ đếm ngược: Đứng yên trên mặt đất quá **120 ticks (~2.0 giây)** → 💀 Tử nạn ngay lập tức.
 - Cơ chế reset: Liên tục di chuyển, đổi hướng, nhảy, bị quạt gió thổi, bật đệm lò xo hoặc va chạm bí ngô.
+- Miễn trừ: đang làm bệ đỡ (có bạn đứng trên vai), đang kéo dây (hauling), vừa hồi sinh (bất tử ~1.7s), hoặc đứng chờ ở cửa khi đã có vớ.
+- **Một người chết = cả đội hồi sinh** tại điểm nghỉ gần nhất (đứng yên, sàn sập, hoặc cả đội rơi vực). Mỗi lần tính 1 lần ngã.
 
 ### 3. Narrow Platforms (Bậc đá siêu hẹp)
 | Chế độ thường | Chế độ VERY HARD |
@@ -141,7 +177,26 @@
 
 ---
 
-## 🏰 Danh sách 8 Màn chơi (8 Hogwarts Chapters)
+## 🥁 Map V2 — Đồng đội bắt buộc (màn 01–08)
+
+8 map mới, mỗi map **6 chương dày đặc** (5 cờ nghỉ). Mọi chướng ngại đều được bot kiểm chứng bằng engine thật (`tests/maps_v2.test.cjs`): **1 người không thể qua, đúng combo đồng đội thì qua được**.
+
+| Cơ chế | Cách qua |
+|:--|:--|
+| **Vực ném** (112px) | Nhảy đơn không tới → X ném bạn qua, rồi bạn kéo cả đội bằng dây |
+| **Phiến nhịp trống** 🥁 | Cả đội phải *tiếp đất* lên mọi phiến đang sáng trong 20 tick → cửa mở (có cửa chỉ mở 1,8–2,5s). Số phiến = clamp(số người, 2, 4) |
+| **Bục cao** | `CHỒNG VAI` 95px (tháp 2) · `THÁP NGƯỜI` 140px khi ≥3 người · `NÉM LÊN` 115px · `BẮN LÊN` 160px |
+| **Bập bênh máy bắn** ⚖️ | Dậm đầu trái → bạn đứng đầu phải bay ~175px. ≥3 người cần 2 người dậm cùng lúc |
+| **Cầu màu nhà** 🎨 | Mỗi bục chỉ đứng được nếu cùng màu khăn → nhảy cóc, người này ném người kia |
+| **Quạt bật/tắt** 💨 | Quạt thổi theo chu kỳ — cùng nhảy vào đúng lúc |
+| **Bùa rút dây** 🪢 | Dây còn 80/120px — cả đội nhảy từng đá cùng nhịp |
+| **Sương Giám Ngục** 🌫️ | Bức tường sương đuổi theo (nhanh hơn khi đông người), ai tụt lại là cả đội ngã |
+| **Dây sờn** | Treo lơ lửng quá 2,5s là đứt dây |
+| **Vớ Snitch** (map 8) | Chiếc vớ bay lượn trên cao — phải ném bạn lên chộp |
+
+Map V2 tắt *Standing Death* (sương đuổi thay thế), hồi sinh 40 tick. **8 map cũ vẫn giữ nguyên** ở màn 09–16 với tên `Cổ điển · …` (HARD MODE đầy đủ).
+
+## 🏰 Danh sách 8 Màn cổ điển (màn 09–16)
 
 | Màn | Tên bản đồ | Bối cảnh Hogwarts | Chướng ngại vật chính |
 |:---:|:-----------|:------------------|:----------------------|
@@ -182,14 +237,15 @@
 ## 🏆 Hệ thống Chấm điểm & Đánh giá Sao (Scoring System)
 
 ```
-Tổng điểm = Điểm Checkpoint + Điểm Chiếc Vớ + Điểm Về Đích + Thưởng Tốc Độ + Thưởng Cẩn Thận
+Tổng điểm = Điểm Checkpoint + Điểm Chiếc Vớ + Điểm Về Đích + Thưởng Tốc Độ + Thưởng Cẩn Thận + Huy hiệu
 ```
 
-- **Cờ Checkpoint:** `+200 điểm` mỗi cờ an toàn cả đội cùng qua.
+- **Cờ Checkpoint:** tổng quỹ `2200 điểm` chia đều cho số cờ của map (cổ điển 11 cờ × 200, V2 5 cờ × 440).
 - **Chiếc vớ tự do (The Sock):** `+500 điểm` khi chạm lấy vớ.
 - **Về đích (Gate Clearance):** `+1000 điểm` khi cả đội cùng bước qua cổng vòm.
-- **Thưởng Tốc độ (Speed Bonus):** `max(0, 1000 - giây * 3)` — Hoàn thành càng nhanh điểm càng cao.
+- **Thưởng Tốc độ (Speed Bonus):** `max(0, 1000 - max(0, giây - par) * 3)` — par V2 = 240s (map 8: 300s), cổ điển = `chiều_dài_map / 100` giây.
 - **Thưởng Cẩn thận (Care Bonus):** `max(0, 600 - số_lần_chết * 50)` — Không ngã vực bảo toàn 600 điểm tuyệt đối.
+- **Huy hiệu (V2):** 🥁 *Nhịp hoàn hảo* (ít cú dậm hụt) `+250` · 🪢 *Không ai treo dây* `+250`.
 - **Đánh giá Xếp hạng Sao:**
   - 🌟🌟🌟 **3 Sao:** Tổng điểm ≥ **5,000 điểm** (Chuẩn Pro-Gamer Speedrun).
   - 🌟🌟 **2 Sao:** Tổng điểm ≥ **4,200 điểm** (Vượt ải xuất sắc).
@@ -231,7 +287,7 @@ http://localhost:3017
 # Kiểm tra cú pháp syntax
 npm run check
 
-# Chạy toàn bộ 24 test suites
+# Chạy toàn bộ 51 test (cổ điển + audit + bot giải map V2)
 npm test
 
 # Build bundle client

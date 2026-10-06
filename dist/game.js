@@ -7,6 +7,8 @@ const controlLabels=['A D W · X','← → ↑ · /','J L I · O','F H T · Y','
 
 const SUPABASE_URL = 'https://fxucyrofcsuqtlkukcrx.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_zEiG2Py5kDmGhkTgw0uWIA_We0rOCGu';
+// Network input comes from untrusted peers: coerce to plain booleans before it reaches the engine.
+function cleanKeys(k){return {left:k?.left===true,right:k?.right===true,jump:k?.jump===true,toss:k?.toss===true};}
 
 const SupabaseNet = {
   client: null,
@@ -96,21 +98,31 @@ const SupabaseNet = {
     }
     listEl.innerHTML = '';
     rooms.forEach(r => {
+      // Room data arrives from any peer on the public lobby channel: build DOM with textContent (no innerHTML) to avoid XSS.
+      const code = String(r.code || '').replace(/[^A-Z0-9]/gi, '').slice(0, 6).toUpperCase();
+      if (!code) return;
       const item = document.createElement('div');
       item.className = 'room-item';
-      const lvlName = levels[r.level || 0]?.name || 'Hogwarts';
-      item.innerHTML = `
-        <div class="room-info">
-          <strong class="room-code-tag">${r.code}</strong>
-          <span>${r.hostName || 'Gia tinh'} · ${lvlName}</span>
-          <small>${r.playerCount || 1}/8 gia tinh</small>
-        </div>
-        <button class="join-quick-btn" data-code="${r.code}">Vào ngay ✦</button>
-      `;
-      item.querySelector('button').onclick = () => {
-        $('online-code').value = r.code;
-        enterOnline('join', r.code);
+      const lvlName = levels[Number(r.level) || 0]?.name || 'Hogwarts';
+      const info = document.createElement('div');
+      info.className = 'room-info';
+      const tag = document.createElement('strong');
+      tag.className = 'room-code-tag';
+      tag.textContent = code;
+      const desc = document.createElement('span');
+      desc.textContent = `${String(r.hostName || 'Gia tinh').slice(0, 18)} · ${lvlName}`;
+      const cnt = document.createElement('small');
+      cnt.textContent = `${Math.min(8, Math.max(1, Number(r.playerCount) || 1))}/8 gia tinh`;
+      info.append(tag, desc, cnt);
+      const btn = document.createElement('button');
+      btn.className = 'join-quick-btn';
+      btn.dataset.code = code;
+      btn.textContent = 'Vào ngay ✦';
+      btn.onclick = () => {
+        $('online-code').value = code;
+        enterOnline('join', code);
       };
+      item.append(info, btn);
       listEl.appendChild(item);
     });
   },
@@ -257,7 +269,7 @@ const SupabaseNet = {
         this.roomChannel.on('broadcast', { event: 'input' }, ({ payload }) => {
           if (this.isHost && payload && this.onlineRoom) {
             const p = this.onlineRoom.players.find(x => x.id === payload.id);
-            if (p) p.keys = payload.keys || {};
+            if (p) p.keys = cleanKeys(payload.keys);
           }
         });
 
@@ -297,7 +309,7 @@ const SupabaseNet = {
       receive(data.payload);
     } else if (data.event === 'input' && this.isHost && data.payload && this.onlineRoom) {
       const p = this.onlineRoom.players.find(x => x.id === data.payload.id);
-      if (p) p.keys = data.payload.keys || {};
+      if (p) p.keys = cleanKeys(data.payload.keys);
     } else if (data.event === 'action' && data.payload) {
       this.handleAction(data.payload);
     }
@@ -316,12 +328,14 @@ const SupabaseNet = {
       const activePlayers = joinedUsers.filter(u => u.role === 'player');
       activePlayers.forEach((u) => {
         let p = this.onlineRoom.players.find(x => x.id === u.id);
-        if (!p && this.onlineRoom.players.length < 8) {
+        // Only add new players in the lobby: a player pushed mid-run has no x/y and NaN-poisons the rope physics.
+        if (!p && this.onlineRoom.status === 'lobby' && this.onlineRoom.players.length < 8) {
           p = { id: u.id, name: u.name || 'Gia tinh', house: this.onlineRoom.players.length % 4, connected: true, keys: {} };
           this.onlineRoom.players.push(p);
           toast(`${p.name} vừa bước vào phòng!`);
         } else if (p) {
           p.connected = true;
+          delete p.leftAt;
           p.name = u.name || p.name;
         }
       });
@@ -337,7 +351,7 @@ const SupabaseNet = {
         if (players.length > 0) {
           players.sort((a, b) => a.id.localeCompare(b.id));
           if (players[0].id === this.playerId) {
-            this.becomeHost();
+            this.becomeHost(joinedUsers);
           }
         }
       }
@@ -353,6 +367,7 @@ const SupabaseNet = {
           this.onlineRoom.players.forEach((x, i) => x.house = i % 4);
         } else {
           p.connected = false;
+          p.leftAt = Date.now();
         }
         const snap = E.snapshot(this.onlineRoom);
         receive(snap);
@@ -362,30 +377,48 @@ const SupabaseNet = {
     }
   },
 
-  becomeHost() {
+  becomeHost(joinedUsers = []) {
     this.isHost = true;
     toast('Chủ phòng đã rời đi. Bạn hiện là Chủ phòng mới! 👑');
     if (state) {
+      const present = new Set(joinedUsers.map(u => u.id));
+      present.add(this.playerId);
+      const status = state.status || 'lobby';
+      let players = state.players.map(p => ({
+        ...p,
+        connected: present.has(p.id),
+        leftAt: present.has(p.id) ? undefined : Date.now(),
+        keys: {}
+      }));
+      // The old host is gone: drop absent players in the lobby, keep them as disconnected mid-run (same as handlePlayerLeave).
+      if (status === 'lobby') players = players.filter(p => p.connected).map((p, i) => ({ ...p, house: i % 4 }));
       this.onlineRoom = {
         code: this.roomCode,
         host: this.playerId,
-        players: state.players.map(p => ({
-          ...p,
-          connected: p.id === this.playerId || p.connected,
-          keys: {}
-        })),
+        players,
         spectators: [],
         level: state.level || 0,
-        status: state.status || 'lobby',
+        status,
         deaths: state.deaths || 0,
+        runDeaths: state.runDeaths || 0,
         checkpoint: state.checkpoint || 80,
+        checkpointsPassed: state.checkpointsPassed || 0,
+        teamRespawn: state.teamRespawn || 0,
+        crumblingPlatforms: state.crumblingPlatforms || {},
+        elapsed: state.elapsed,
         ticks: state.ticks || 0,
         key: state.key || false,
+        gateOpen: true,
         ropeLength: state.ropeLength || 185,
         ropeMax: state.ropeMax || 300,
         pranks: state.pranks || 0,
         bumps: state.bumps || 0,
-        variant: state.variant || 0
+        variant: state.variant || 0,
+        drumState: state.drumState || [],
+        catState: (state.catState || []).map(c => ({ stomps: {}, launch: c.launch ?? -999 })),
+        fogState: state.fogState || [],
+        drumHits: state.drumHits || 0,
+        dangleTotal: state.dangleTotal || 0
       };
     }
     if (this.roomChannel) {
@@ -409,7 +442,7 @@ const SupabaseNet = {
     if (!action) return;
     if (this.isHost && action.type === 'request_state') {
       if (this.onlineRoom) {
-        if (action.role === 'player' && !this.onlineRoom.players.some(p => p.id === action.senderId)) {
+        if (action.role === 'player' && this.onlineRoom.status === 'lobby' && !this.onlineRoom.players.some(p => p.id === action.senderId)) {
           if (this.onlineRoom.players.length < 8) {
             this.onlineRoom.players.push({
               id: action.senderId,
@@ -533,6 +566,23 @@ const SupabaseNet = {
     this.announceRoom('lobby');
   },
 
+  // A player who stays disconnected mid-run would freeze the engine forever (tick needs everyone connected).
+  // After a grace period, drop them; fall back to the lobby if fewer than 2 remain.
+  pruneDisconnected(graceMs = 15000) {
+    const r = this.onlineRoom;
+    if (!this.isHost || !r || r.status !== 'playing') return;
+    const now = Date.now();
+    const gone = r.players.filter(p => !p.connected && p.id !== this.playerId && now - (p.leftAt || now) > graceMs);
+    if (!gone.length) return;
+    r.players = r.players.filter(p => !gone.includes(p));
+    if (r.players.length < 2) r.status = 'lobby';
+    toast(`${gone.map(p => p.name).join(', ')} đã rời trận. ${r.status === 'lobby' ? 'Quay về sảnh.' : 'Cả đội tiếp tục!'}`);
+    const snap = E.snapshot(r);
+    receive(snap);
+    this.broadcastState(snap);
+    this.announceRoom(r.status);
+  },
+
   leave() {
     this.announceRoom('closed');
     if (this.roomChannel) {
@@ -630,16 +680,24 @@ function scoreUI(s,watching){
  $('run-falls').textContent=`${s.runDeaths||0} lần ngã`;
  if(!won)return;
  $('result-score').textContent=(points.total||0).toLocaleString('vi-VN');$('score-stars').textContent='★'.repeat(points.stars||1)+'☆'.repeat(3-(points.stars||1));$('score-stars').setAttribute('aria-label',`${points.stars||1} trên 3 sao`);
- const list=$('score-breakdown');list.replaceChildren();for(const[key,label]of [['checkpoints','Cờ nghỉ đã vượt'],['sock','Tìm được vớ'],['finish','Cả đội cùng thoát'],['speed','Thưởng tốc độ'],['care','Thưởng ít ngã']]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent='+'+(points[key]||0).toLocaleString('vi-VN');list.append(dt,dd);}
- $('score-best').textContent='';if(watching)return;
+ const list=$('score-breakdown');list.replaceChildren();for(const[key,label]of [['checkpoints','Cờ nghỉ đã vượt'],['sock','Tìm được vớ'],['finish','Cả đội cùng thoát'],['speed','Thưởng tốc độ'],['care','Thưởng ít ngã'],['bonus','Huy hiệu']]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent='+'+(points[key]||0).toLocaleString('vi-VN');list.append(dt,dd);}
+ if(points.badges&&(points.badges.sync||points.badges.rope)){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=[points.badges.sync&&'🥁 Nhịp hoàn hảo',points.badges.rope&&'🪢 Không ai treo dây'].filter(Boolean).join(' · ');dd.textContent='★';list.append(dt,dd);}
+  $('score-best').textContent='';if(watching)return;
  try{const key=`sockbound-best-${s.level}-${s.players.length}`,previous=Number(localStorage.getItem(key)||0),best=Math.max(previous,points.total||0);if(lastStatus!=='won'&&best>previous)localStorage.setItem(key,String(best));$('score-best').textContent=`Kỷ lục trên máy này · ${s.players.length} người: ${best.toLocaleString('vi-VN')} điểm`;}catch{}
+}
+let lastDrumHits=0,lastLaunch={},lastOpen={};
+// V2 audio/toast cues: drum beat on each plate landing, fanfare when a gate opens, whoosh on catapult launch.
+function v2Cues(s){
+ if((s.drumHits||0)>lastDrumHits)tone(520+((s.drumHits||0)%4)*90,.07);lastDrumHits=s.drumHits||0;
+ (s.drumState||[]).forEach((d,i)=>{if(d.open&&!lastOpen[i]){tone(660,.1);setTimeout(()=>tone(880,.14),90);toast(d.until>0?`Cửa mở! Chạy mau — ${((d.until-s.ticks)/60).toFixed(1)} giây!`:'Đúng nhịp! Cửa đã mở cho cả đội 🥁');}lastOpen[i]=!!d.open;});
+ (s.catState||[]).forEach((c,i)=>{if(c.launch>(lastLaunch[i]??-999)&&s.ticks-c.launch<10){tone(300,.08);setTimeout(()=>tone(900,.16),60);}lastLaunch[i]=c.launch;});
 }
 function receive(s){state=s;const watching=session?.role==='spectator',ended=s.status==='ended',local=!!localRoom,online=!!session?.isOnline,host=!watching&&(local?true:online?SupabaseNet.isHost:s.host===session?.id),waiting=s.status==='lobby',won=s.status==='won';$('lobby').hidden=true;$('ended').hidden=!ended;$('spectator-badge').hidden=!watching;$('exit').textContent=watching?'Thoát xem':'Rời phòng';document.querySelector('.control-guide').hidden=watching;$('waiting').hidden=!waiting;$('result').hidden=!won;$('exit').hidden=false;$('retry').hidden=waiting||!host;$('pause').hidden=waiting||watching||ended;$('start').hidden=!host;$('lan-map-select').hidden=!host;$('lan-map-label').hidden=!host;$('start').disabled=s.players.filter(p=>p.connected).length<2;$('room-code').textContent=s.code;$('chapter').textContent=String(s.level+1).padStart(2,'0');$('level-title').textContent=levels[s.level].name;$('sock-status').textContent=s.key?'🧦 Đã tìm được vớ':'♧ Tìm chiếc vớ';$('sock-status').style.color=s.key?'#e8c885':'';$('hint').textContent=waiting?'Mời bạn bè vào phòng. Hành trình cần ít nhất 2 gia tinh.':levels[s.level].hint;$('death-count').textContent=s.deaths?`${s.deaths} lần vấp · vẫn cùng nhau`:'Dây đàn hồi · X ném bạn';$('wait-note').textContent=host?(s.players.length<2?'Cần ít nhất 2 gia tinh.':'Mọi người đã sẵn sàng? Chủ phòng bắt đầu nhé.'):'Đợi chủ phòng bắt đầu…';$('room-label').textContent=local?`✧ ${count} gia tinh · chung bàn phím`:(online?`ONLINE SUPABASE · PHÒNG ${s.code} · ${s.players.length}/8 GIA TINH · ${s.spectatorCount||0} khán giả`:`PHÒNG ${s.code} · ${s.players.length}/8 GIA TINH · ${s.spectatorCount||0} khán giả`);
  scoreUI(s,watching);
  document.querySelector('.stage').classList.toggle('playing',!waiting);
  if(waiting){const members=$('members');members.replaceChildren();for(let i=0;i<8;i++){const p=s.players[i],el=document.createElement('div');el.className='member'+(p?'':' empty');const icon=document.createElement('b');icon.textContent=p?'✦':'+';icon.style.color=colors[(p?.house??i)%4];el.append(icon,document.createTextNode(p?p.name:'Chờ bạn'));if(p){const small=document.createElement('small');small.textContent=!p.connected?'Mất kết nối':p.id===s.host?'Chủ phòng':'Đã tham gia';el.append(small);}members.append(el);}}
  if(won){$('result-title').textContent='Cả hội đã tự do!';$('result-copy').textContent=`${levels[s.level].name} · ${s.players.length} gia tinh cùng thoát · ${Math.round(s.elapsed||0)} giây · ${s.pranks||0} cú ném bạn · ${s.bumps||0} cú va chạm`;$('next').textContent='Chọn hành trình khác';$('next').hidden=!host;$('result-note').textContent=host?'Hành trình hoàn thành! Chọn một map mới hoặc chơi lại.':'Đợi chủ phòng chọn hành trình mới…';}
- if(s.status==='playing'&&s.level!==lastLevel){toast(['Không có câu đố. Chỉ có bạn… và bạn rất lầy.','Ai bôi bơ lên sàn?! Không ai nhận.','Đệm tím không hỏi. Đệm tím chỉ BOING!','Tai dài bắt gió. Cả hội thành diều.','Cầu nghiêng một chút. Hội nghiêng rất nhiều.','Bí ngô đang tuyển gia tinh làm bóng bowling.','Cửa không chờ. Cửa chỉ hất.','Lấy vớ, kéo bạn, cùng tự do!'][s.level]);lastLevel=s.level;lastPranks=0;lastBumps=0;lastCheckpoint=80;}if(s.deaths>lastDeaths){tone(160,.12);lastDeaths=s.deaths;}if(s.pranks>lastPranks){tone(700,.12);toast(['Gửi đồng đội bằng đường hàng không!','Bạn ơi, bay trước đi!','Đồng đội đã được nâng cấp thành tên lửa.'][s.pranks%3]);}if(s.bumps>lastBumps){tone(220,.1);(s.players||[]).forEach(p=>{if(p.spin>15){for(let k=0;k<5;k++)spawnParticle(p.x+15,p.y+22,(Math.random()-.5)*7,-1.5-Math.random()*4.5,'#ffd700',8,24,'star');}});if(s.bumps%3===1)toast('Va trúng vật cản! Bị đẩy lùi rồi — nhớ nhảy qua nhé! 🎃');}if(s.checkpoint>lastCheckpoint){toast('+200 điểm đội! Đã lưu điểm nghỉ cho cả hội.');}const danglingElves=(s.players||[]).filter(p=>p.dangling);if(danglingElves.length>lastDanglingCount){tone(250,.22);toast(`${danglingElves[0].name} đang treo lơ lửng bên bờ vực! Kéo bạn lên mau! 🪢`);}lastDanglingCount=danglingElves.length;lastPranks=s.pranks||0;lastBumps=s.bumps||0;lastCheckpoint=s.checkpoint||80;
+ if(s.status==='playing'&&s.level!==lastLevel){toast(levels[s.level].toast||levels[s.level].hint);lastDrumHits=s.drumHits||0;lastLaunch={};lastOpen={};lastLevel=s.level;lastPranks=0;lastBumps=0;lastCheckpoint=80;}if(s.deaths>lastDeaths){tone(160,.12);lastDeaths=s.deaths;}if(s.pranks>lastPranks){tone(700,.12);toast(['Gửi đồng đội bằng đường hàng không!','Bạn ơi, bay trước đi!','Đồng đội đã được nâng cấp thành tên lửa.'][s.pranks%3]);}if(s.bumps>lastBumps){tone(220,.1);(s.players||[]).forEach(p=>{if(p.spin>15){for(let k=0;k<5;k++)spawnParticle(p.x+15,p.y+22,(Math.random()-.5)*7,-1.5-Math.random()*4.5,'#ffd700',8,24,'star');}});if(s.bumps%3===1)toast('Va trúng vật cản! Bị đẩy lùi rồi — nhớ nhảy qua nhé! 🎃');}if(s.checkpoint>lastCheckpoint){const pts=Math.round(2200/Math.max(1,levels[s.level].checkpoints.length));toast(`+${pts} điểm đội! Đã lưu điểm nghỉ cho cả hội.`);}v2Cues(s);const danglingElves=(s.players||[]).filter(p=>p.dangling);if(danglingElves.length>lastDanglingCount){tone(250,.22);toast(`${danglingElves[0].name} đang treo lơ lửng bên bờ vực! Kéo bạn lên mau! 🪢`);}lastDanglingCount=danglingElves.length;lastPranks=s.pranks||0;lastBumps=s.bumps||0;lastCheckpoint=s.checkpoint||80;
  if(s.status==='won'&&lastStatus!=='won'){tone(660,.2);setTimeout(()=>tone(880,.3),180);}if(s.key&&!lastKey){tone(880,.18);toast('+500 điểm đội! Đã tìm được vớ, cùng tới cửa nhé.');}lastStatus=s.status;lastKey=s.key;
  $('touch').hidden=waiting||won||watching||ended;
  if(watching)$('hint').textContent=ended?'Các gia tinh đã rời phòng.':waiting?'Khán giả đang chờ chủ phòng bắt đầu.':'Bạn đang xem trực tiếp · '+s.players.length+' gia tinh · '+(s.spectatorCount||0)+' khán giả';
@@ -659,7 +717,7 @@ $('help').onclick=()=>{keys={};pulses={};$('help-dialog').showModal();};$('close
 $('sound').onclick=()=>{sound=!sound;$('sound').style.color=sound?'#e6c782':'';$('sound').setAttribute('aria-label',sound?'Tắt âm thanh':'Bật âm thanh');$('sound').title=sound?'Tắt âm thanh':'Bật âm thanh';tone(523);};
 function pressed(key){return !!keys[key]||performance.now()<(pulses[key]||0);}
 const actionKeys=new Set(mappings.flatMap(m=>m.slice(2)).concat('Space'));
-const gameKeys=new Set([...mappings.flat(),'Space']);addEventListener('keydown',e=>{if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)||$('help-dialog').open)return;if(gameKeys.has(e.code)&&state?.status==='playing'&&session?.role!=='spectator'){e.preventDefault();if(actionKeys.has(e.code)&&!e.repeat)pulses[e.code]=performance.now()+140;keys[e.code]=true;}});addEventListener('keyup',e=>{delete keys[e.code];});addEventListener('blur',()=>{keys={};pulses={};if(session&&!localRoom&&session.role!=='spectator')api('input',{left:false,right:false,jump:false,toss:false}).catch(()=>{});});document.addEventListener('visibilitychange',()=>{if(document.hidden)keys={};pulses={};});
+const gameKeys=new Set([...mappings.flat(),'Space']);addEventListener('keydown',e=>{if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)||$('help-dialog').open)return;if(gameKeys.has(e.code)&&state?.status==='playing'&&session?.role!=='spectator'){e.preventDefault();if(actionKeys.has(e.code)&&!e.repeat)pulses[e.code]=performance.now()+140;keys[e.code]=true;}});addEventListener('keyup',e=>{delete keys[e.code];});addEventListener('blur',()=>{keys={};pulses={};if(session&&!localRoom&&session.role!=='spectator')api('input',{left:false,right:false,jump:false,toss:false}).catch(()=>{});});document.addEventListener('visibilitychange',()=>{if(document.hidden){keys={};pulses={};}});
 document.querySelectorAll('[data-key]').forEach(button=>{const key={left:'KeyA',right:'KeyD',jump:'KeyW',toss:'KeyX'}[button.dataset.key];button.onpointerdown=e=>{e.preventDefault();button.setPointerCapture(e.pointerId);if(actionKeys.has(key))pulses[key]=performance.now()+140;keys[key]=true;};button.onpointerup=button.onpointercancel=button.onlostpointercapture=()=>{delete keys[key];};});
 setInterval(()=>{
   if(!session||localRoom||session.role==='spectator'||state?.status!=='playing')return;
@@ -1230,6 +1288,76 @@ function drawGreatHall(t){
 }
 
 let cameraX=0,cameraY=0,cameraZoom=1,cameraLevel=-1;
+// ---- V2 co-op mechanics. Geometry always comes from E.solidsFor()/engine helpers so drawings match hitboxes.
+const KIND_LABEL={stack2:'🧗 CHỒNG VAI',stack:'🧗 THÁP NGƯỜI',toss:'🤾 NÉM LÊN',cat:'⚖️ BẮN LÊN'};
+function drawV2(s,l,t){
+  if(!l.v2)return;
+  const st=s||{level:levels.indexOf(l),ticks:0,players:[{},{}]},ticks=st.ticks||0,n=(st.players||[]).length||2;
+  const solids=E.solidsFor({...st,players:st.players||[{},{}]});
+  // Rope-shrink zones: violet tint over the whole stretch.
+  for(const[a,b]of l.shrinkZones||[]){
+    const g=ctx.createLinearGradient(0,300,0,570);g.addColorStop(0,'rgba(120,70,190,0)');g.addColorStop(1,'rgba(120,70,190,0.22)');
+    rect(a,300,b-a,270,g);ctx.fillStyle='#cdb6f2';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText('🪢 BÙA RÚT DÂY · DÂY NGẮN',(a+b)/2,322);
+  }
+  // Floating ledges.
+  solids.filter(b=>b.block).forEach(b=>{
+    const bk=l.blocks.find(k=>k.x===b.x);
+    rect(b.x+8,b.y+18,6,570-b.y-18,'#3c4f45');rect(b.x+b.w-14,b.y+18,6,570-b.y-18,'#3c4f45');
+    platform(b.x,b.y,b.w,b.h);
+    ctx.fillStyle='#f0dca6';ctx.font='bold 10px Arial';ctx.textAlign='center';ctx.fillText(KIND_LABEL[bk?.kind]||'',b.x+b.w/2,b.y-30);
+  });
+  // Drum plates + gates.
+  (l.drums||[]).forEach((d,i)=>{
+    const ds=st.drumState?.[i]||{hits:{}},k=E.activePlates(d,n);
+    d.plates.forEach((pl,j)=>{
+      const y=E.plateY(l,pl,n),on=j<k,hit=ds.hits?.[j]!=null&&ticks-ds.hits[j]<=E.V2.window;
+      const beat=on&&!ds.open?(Math.sin(ticks/10)+1)/2:0;
+      rect(pl.x,y-5,pl.w,5,ds.open?'#7fc48a':hit?'#ffe27a':on?`rgba(214,160,80,${0.55+beat*0.4})`:'#45524c');
+      if(hit||ds.open)glow(pl.x+pl.w/2,y-4,34,ds.open?'rgba(120,220,140,0.35)':'rgba(255,220,110,0.5)');
+      if(on&&!ds.open){ctx.fillStyle='#ffe9b0';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('🥁',pl.x+pl.w/2,y-10);}
+    });
+    const g=d.gate,closed=solids.some(b=>b.gate===i);
+    if(closed){
+      rect(g.x,300,g.w,270,'#2b2433');for(let yy=310;yy<570;yy+=26)rect(g.x+4,yy,g.w-8,4,'#6b5a7a');
+      ctx.fillStyle='#e9d6ff';ctx.font='bold 11px Arial';ctx.textAlign='center';ctx.fillText(`🔒 ${k} NHỊP`,g.x+g.w/2,292);
+    }else if(ds.until>0){
+      const left=Math.max(0,ds.until-ticks);rect(g.x,560,g.w,10,'#4b6b52');
+      ctx.fillStyle=left<40?'#ff8a6b':'#bfe8c4';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(`⏳ ${(left/60).toFixed(1)}s`,g.x+g.w/2,548);
+    }
+  });
+  // Catapult planks: tilt for a moment after a launch.
+  (l.catapults||[]).forEach((c,i)=>{
+    const since=ticks-(st.catState?.[i]?.launch??-999),tilt=since>=0&&since<15?(1-since/15)*0.25:0;
+    ctx.save();ctx.translate(c.x+c.w/2,c.y+7);ctx.rotate(-tilt);
+    rect(-c.w/2,-7,c.w,14,'#8d6a3e');rect(-c.w/2,-7,c.w/2,4,'#d98a55');rect(0,-7,c.w/2,4,'#9fd28c');ctx.restore();
+    poly([[c.x+c.w/2-16,570],[c.x+c.w/2+16,570],[c.x+c.w/2,c.y+12]],'#4a614e');
+    ctx.fillStyle='#f3d9a8';ctx.font='bold 10px Arial';ctx.textAlign='center';
+    ctx.fillText(n>=3?'DẬM ×2':'DẬM',c.x+c.w/4,c.y-8);ctx.fillText('BAY ↑',c.x+c.w*3/4,c.y-8);
+  });
+  // House bridges: each colour is only solid for its own elf.
+  solids.filter(b=>b.house!=null).forEach(b=>{
+    const col=colors[b.house%colors.length];
+    ctx.globalAlpha=0.9;rect(b.x,b.y,b.w,b.h,col);ctx.globalAlpha=1;
+    rect(b.x,b.y,b.w,3,'rgba(255,255,255,0.45)');glow(b.x+b.w/2,b.y+8,30,col+'55');
+  });
+}
+// Dementor fog: dark wall chasing the team (drawn above the elves).
+function drawFog(s,l,t){
+  (l.fogs||[]).forEach((f,i)=>{
+    const fs=s?.fogState?.[i];if(!fs||!fs.active)return;
+    const x=fs.x,g=ctx.createLinearGradient(x-260,0,x+40,0);
+    g.addColorStop(0,'rgba(8,10,18,0.95)');g.addColorStop(0.75,'rgba(20,24,40,0.85)');g.addColorStop(1,'rgba(40,50,70,0)');
+    rect(x-1400,0,1440,660,g);
+    for(let k=0;k<3;k++){const yy=200+k*110+Math.sin(t*2+k)*20,xx=x-40-k*30;
+      ctx.fillStyle='rgba(12,14,22,0.9)';ctx.beginPath();ctx.ellipse(xx,yy,18,30,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(170,200,230,0.5)';ctx.fillRect(xx-8,yy-10,4,3);ctx.fillRect(xx+4,yy-10,4,3);}
+    ctx.fillStyle='#c4d4ef';ctx.font='bold 13px Arial';ctx.textAlign='center';ctx.fillText('🌫️ GIÁM NGỤC ĐUỔI!',x-80,150);
+  });
+}
+function fogShake(s,l){
+  let d=1e9;(l.fogs||[]).forEach((f,i)=>{const fs=s?.fogState?.[i];if(fs?.active)for(const p of s.players||[])d=Math.min(d,p.x-fs.x);});
+  return d<160?(160-d)/160*5:0;
+}
 function draw(t){
   const s=state,l=levels[s?.level||0];
 
@@ -1247,7 +1375,8 @@ function draw(t){
   // Scenery scrolls more slowly than the physical route.
   ctx.save();const drift=cameraX*.28;ctx.translate(-drift%1200,0);
   drawMapScene(l.map,t);ctx.translate(1200,0);drawMapScene(l.map,t);ctx.restore();
-  ctx.save();ctx.translate(-cameraX*cameraZoom,570*(1-cameraZoom)+cameraY);ctx.scale(cameraZoom,cameraZoom);
+  const shake=active?fogShake(s,l):0;
+  ctx.save();ctx.translate(-cameraX*cameraZoom+(Math.random()-.5)*shake,570*(1-cameraZoom)+cameraY+(Math.random()-.5)*shake);ctx.scale(cameraZoom,cameraZoom);
   for(const [i,stop] of l.stops.entries()){
     line(stop.x,570,stop.x,400,'#ac9161',3);rect(stop.x-12,395,240,48,'#20332eee');
     ctx.textAlign='left';ctx.fillStyle='#edd4a0';ctx.font='bold 15px Georgia';ctx.fillText(`${i+1}/${l.stops.length} · ${stop.label}`,stop.x,416);ctx.font='12px Arial';ctx.fillStyle='#b6c9b8';ctx.fillText(stop.instruction,stop.x,433);
@@ -1260,7 +1389,21 @@ function draw(t){
   }
   // 7. Platforms
   for(const [x,y,w,h] of l.platforms)platform(x,y,w,h);
-  for(const[x,y,w,h,amp]of l.movers)platform(x,y+Math.sin((s?.ticks||0)/90+x)*amp,w,h,true);
+  // Must match engine solidsFor(): sin(ticks/80 + x) * amp
+  for(const[x,y,w,h,amp]of l.movers)platform(x,y+Math.sin((s?.ticks||0)/80+x)*amp,w,h,true);
+  // Crumbling platforms (engine solids that were previously invisible): shake while crumbling, vanish when collapsed.
+  (l.crumbling||[]).forEach(([x,y,w,h],idx)=>{
+    const st=s?.crumblingPlatforms?.[idx];
+    if(st?.collapsed)return;
+    const shaking=!!st?.crumbling;
+    const ox=shaking?(Math.random()-.5)*3:0,oy=shaking?(Math.random()-.5)*2:0;
+    platform(x+ox,y+oy,w,h);
+    rect(x+ox,y+oy,w,h,shaking?'rgba(220, 90, 60, 0.45)':'rgba(190, 150, 90, 0.25)');
+    line(x+ox+w*.3,y+oy+3,x+ox+w*.45,y+oy+h-2,'#1a120c',1.2);line(x+ox+w*.65,y+oy+2,x+ox+w*.55,y+oy+h-3,'#1a120c',1.2);
+  });
+  // Helper blocks next to bastion walls (engine adds them only for teams of fewer than 3).
+  if(l.walls&&(s?.players?.length||0)<3){for(const wl of l.walls){platform(wl.x-70,505,45,65);ctx.fillStyle='#e8d29a';ctx.font='bold 10px Arial';ctx.textAlign='center';ctx.fillText('BỆ ĐỠ',wl.x-47,498);}}
+  drawV2(s,l,t);
 
   // 8. Sàn Bơ Trơn (Ice / Butter Slide)
   for(const [ix1,ix2]of l.iceZones){
@@ -1327,15 +1470,19 @@ function draw(t){
 
   // Seesaw
   for(const[x,y,w]of l.seesaws){
-    const k=Math.sin((s?.ticks||0)/85+(s?.variant||0)+x)*.16;
+    // Must match engine solidsFor() seesaw slope: sin(ticks/75 + variant + x) * 0.2
+    const k=Math.sin((s?.ticks||0)/75+(s?.variant||0)+x)*.2;
     poly([[x,y-k*w/2],[x+w,y+k*w/2],[x+w,y+k*w/2+16],[x,y-k*w/2+16]],'#8d784a');
     line(x,y-k*w/2,x+w,y+k*w/2,'#ecd28c',4);
     poly([[x+w/2-24,570],[x+w/2+24,570],[x+w/2,y+15]],'#4a614e');
   }
 
   // Steampunk Wind Fans
-  for(const[x,y,w,dir]of l.fans||[]){
+  for(const f of l.fans||[]){
+    const[x,y,w,dir]=f;
     rect(x-10,552,32,18,'#5b6f79');
+    // Pulsing fans (V2): only blow while on — must match engine fanOn().
+    if(!E.fanOn(f,s?.ticks||0)){ctx.save();ctx.translate(x+8,534);for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);poly([[0,0],[7,-28],[18,-20],[8,3]],'#6b7f7c');}ctx.restore();ctx.fillStyle='#8aa09c';ctx.font='bold 11px Arial, sans-serif';ctx.textAlign='center';ctx.fillText('… quạt nghỉ',x+w/2,y-8);continue;}
     const rotor=t*8;
     ctx.save();ctx.translate(x+8,534);ctx.rotate(rotor);
     for(let i=0;i<4;i++){
@@ -1379,9 +1526,10 @@ function draw(t){
   // Rotors
   for(const b of obs.rotors){
     rect(b.x-5,b.y,10,570-b.y,'#4c6145');
-    ctx.save();ctx.translate(b.x,b.y);ctx.rotate(-b.angle);
-    rect(-10,-b.r,20,b.r*2,'#8c764e');
-    rect(-6,-b.r+4,12,b.r*2-8,'#c7ad6e');
+    // Engine checks 4 blades at angle + i*90° (rotating with +angle); draw the same cross so hitboxes are visible.
+    ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle);
+    rect(-b.r,-10,b.r*2,20,'#8c764e');rect(-10,-b.r,20,b.r*2,'#8c764e');
+    rect(-b.r+4,-6,b.r*2-8,12,'#c7ad6e');rect(-6,-b.r+4,12,b.r*2-8,'#c7ad6e');
     ctx.fillStyle='#ffde85';
     ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.fill();
     ctx.restore();
@@ -1418,12 +1566,14 @@ function draw(t){
 
   // 13. The Sock Prop
   if(!s?.key){
-    sock(l.key[0],l.key[1],t*2,1.35);
+    // The sock may move (V2 finale Snitch): always draw at the engine's keyPos.
+    const kp=obs.keyPos||{x:l.key[0],y:l.key[1]};
+    sock(kp.x,kp.y,t*2,1.35);
     ctx.fillStyle='#f5d98b';ctx.font='bold 12px Arial, sans-serif';
-    ctx.textAlign='center';ctx.fillText('🧦 LẤY VỚ!',l.key[0],l.key[1]-44);
+    ctx.textAlign='center';ctx.fillText(l.snitch?'🧦✨ VỚ SNITCH — NÉM BẠN LÊN CHỘP!':'🧦 LẤY VỚ!',kp.x,kp.y-44);
     // Spawn ambient stardust around the sock
     if(Math.random()<0.25){
-      spawnParticle(l.key[0]+(Math.random()-0.5)*30,l.key[1]+(Math.random()-0.5)*30,(Math.random()-0.5)*0.5,-0.6-Math.random()*0.5,'#ffe07d',2.5,45,'star');
+      spawnParticle(kp.x+(Math.random()-0.5)*30,kp.y+(Math.random()-0.5)*30,(Math.random()-0.5)*0.5,-0.6-Math.random()*0.5,'#ffe07d',2.5,45,'star');
     }
   }
 
@@ -1510,6 +1660,7 @@ function draw(t){
       spawnParticle(p.x+15+(Math.random()-0.5)*12,p.y+10,(Math.random()-0.5)*1.5,1.2,'#6dd3f7',2.5,25,'dot');
     }
   });
+  drawFog(s,l,t);
 
   // 16. Dynamic Particles Update & Draw
   for(let i=particles.length-1;i>=0;i--){
@@ -1587,7 +1738,12 @@ function loop(now){
     state=E.snapshot(localRoom);
     if(now-localHudAt>100||state.status!==lastStatus){receive(state);localHudAt=now;}
   }
-  if(session?.isOnline&&SupabaseNet.isHost&&SupabaseNet.onlineRoom&&SupabaseNet.onlineRoom.status==='playing'&&!paused&&!$('help-dialog').open){
+  // Online host is authoritative for everyone: pausing or opening help only stops the host's own input (keys are zeroed
+  // via `paused`/help), it must never freeze the whole room.
+  if(session?.isOnline&&SupabaseNet.isHost&&SupabaseNet.onlineRoom&&SupabaseNet.onlineRoom.status==='playing'){
+    SupabaseNet.pruneDisconnected();
+  }
+  if(session?.isOnline&&SupabaseNet.isHost&&SupabaseNet.onlineRoom&&SupabaseNet.onlineRoom.status==='playing'){
     accumulator+=delta;
     while(accumulator>=1000/60){
       const hp = SupabaseNet.onlineRoom.players.find(p => p.id === SupabaseNet.playerId);
