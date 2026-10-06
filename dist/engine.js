@@ -238,10 +238,10 @@ const PARTS = {
       if (h) {
         lv.blocks.push({ x: cur, w: 70, kind: h });
         plates.push({ x: cur + 5, w: 60, block: lv.blocks.length - 1 });
-        cur += 70 + 110;
+        cur += 70 + 25;
       } else {
         plates.push({ x: cur, w: 60 });
-        cur += 60 + 120;
+        cur += 60 + 60;
       }
     }
     const gate = { x: cur + 10, w: 40 };
