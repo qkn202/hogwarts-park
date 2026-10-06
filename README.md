@@ -193,40 +193,72 @@
 
 ## 🥁 Map V2 — Đồng đội bắt buộc (màn 01–08)
 
-8 map mới, mỗi map **6 chương dày đặc** (5 cờ nghỉ). Mọi chướng ngại đều được bot kiểm chứng bằng engine thật (`tests/maps_v2.test.cjs`): **1 người không thể qua, đúng combo đồng đội thì qua được**.
+8 map hoàn toàn mới, mỗi map được chia thành **6 chương dày đặc** (kèm 5 cờ nghỉ). Mọi chướng ngại đều được bot kiểm chứng bằng engine thật ([tests/maps_v2.test.cjs](file:///Users/khang/HP%20park/hogwarts-park/tests/maps_v2.test.cjs)): **1 người chơi đơn độc không thể qua, nhưng đúng combo đồng đội chắc chắn sẽ vượt qua**.
 
-| Cơ chế | Cách qua |
+### Bảng cơ chế Co-op V2:
+| Cơ chế | Cách phối hợp vượt ải |
 |:--|:--|
-| **Vực ném** (112px) | Nhảy đơn không tới → X ném bạn qua, rồi bạn kéo cả đội bằng dây |
-| **Phiến nhịp trống** 🥁 | Cả đội phải *tiếp đất* lên mọi phiến đang sáng trong 20 tick → cửa mở (có cửa chỉ mở 1,8–2,5s). Số phiến = clamp(số người, 2, 4) |
-| **Bục cao** | `CHỒNG VAI` 95px (tháp 2) · `THÁP NGƯỜI` 140px khi ≥3 người · `NÉM LÊN` 115px · `BẮN LÊN` 160px |
-| **Bập bênh máy bắn** ⚖️ | Dậm đầu trái → bạn đứng đầu phải bay ~175px. ≥3 người cần 2 người dậm cùng lúc |
-| **Cầu màu nhà** 🎨 | Mỗi bục chỉ đứng được nếu cùng màu khăn → nhảy cóc, người này ném người kia |
-| **Quạt bật/tắt** 💨 | Quạt thổi theo chu kỳ — cùng nhảy vào đúng lúc |
-| **Bùa rút dây** 🪢 | Dây còn 80/120px — cả đội nhảy từng đá cùng nhịp |
-| **Sương Giám Ngục** 🌫️ | Bức tường sương đuổi theo (nhanh hơn khi đông người), ai tụt lại là cả đội ngã |
-| **Dây sờn** | Treo lơ lửng quá 2,5s là đứt dây |
-| **Vớ Snitch** (map 8) | Chiếc vớ bay lượn trên cao — phải ném bạn lên chộp |
+| **Vực ném** (`tossGap` 112px) | Nhảy đơn chỉ bay được ~94px → Bấm `X` / `/` ném bạn qua bờ bên kia, bạn qua rồi làm mỏ neo kéo cả đội |
+| **Phiến nhịp trống** 🥁 | Cả đội phải *tiếp đất* lên mọi phiến trống đang sáng trong vòng **20 ticks (~0.33s)** → Cổng mở (một số cổng hẹn giờ 1.8s–2.5s). Số phiến tự co giãn: `clamp(số_người, 2, 4)` |
+| **Bục cao chuyên dụng** | `CHỒNG VAI` (95px, tháp 2 người) · `THÁP NGƯỜI` (140px khi ≥3 người) · `NÉM LÊN` (115px) · `BẮN LÊN` (160px) |
+| **Bập bênh máy bắn** ⚖️ | 1–2 bạn đứng đầu phải bập bênh làm đạn; bạn còn lại dậm mạnh đầu trái → bay vút cao 175px. Khi ≥3 người, cần 2 bạn dậm cùng lúc |
+| **Cầu màu nhà** 🎨 | Bục màu Gryffindor (đỏ), Slytherin (xanh lá), Ravenclaw (xanh dương), Hufflepuff (vàng) — chỉ có gia tinh cùng màu mới đứng được! Nhảy cóc: ném bạn sang bục của họ |
+| **Quạt gió bật/tắt** 💨 | Quạt xoay chu kỳ bật/tắt — phải căn nhịp lúc gió thổi để cả hội cùng lướt qua |
+| **Bùa rút dây** 🪢 | Bùa rút ngắn dây chỉ còn 80px–120px — cả đội phải xếp hàng nhảy từng phiến đá cùng nhịp |
+| **Sương Giám Ngục đuổi** 🌫️ | Bức tường sương tối lùa từ phía sau (tốc độ tăng dần theo sĩ số đội). Ai tụt lại bị sương nuốt chửng = cả đội ngã |
+| **Dây sờn đứt** (`ropeFray`) | Treo lơ lửng dưới vực quá 2.5s không được kéo lên sẽ làm đứt dây ma thuật (Team Wipe) |
+| **Vớ Snitch ma thuật** (Màn 8) | Chiếc vớ tự do hóa thành Golden Snitch bay lượn trên không — phải chồng tháp và ném bạn lên chộp! |
 
-Map V2 tắt *Standing Death* (sương đuổi thay thế), hồi sinh 40 tick. **8 map cũ vẫn giữ nguyên** ở màn 09–16 với tên `Cổ điển · …` (HARD MODE đầy đủ).
+### Danh sách 8 Màn chơi V2:
+| Màn | Tên bản đồ | Bối cảnh | 6 Chương thử thách & Điểm nhấn Boss |
+|:---:|:-----------|:---------|:-------------------------------------|
+| **01** | **Phòng sinh hoạt chung** | Tháp Gryffindor | Thảm thủng (vực ném) → Trống phòng ngủ → Bục lò sưởi (chồng vai) → Hai lần bay → Nhịp cả hội → **BOSS: Tháp & Vực** |
+| **02** | **Đại Sảnh Đường** | Bàn tiệc 4 nhà | Trống khai tiệc → Bàn giáo sư (chồng vai) → Cửa sảnh đóng nhanh → Băng chuyền đĩa → Giám Ngục dự tiệc (sương đuổi) → **BOSS: Trống trần nhà** |
+| **03** | **Lớp học Bùa chú** | Thư viện & Bàn học | Cầu màu nhập môn (nhảy cóc) → Bùa đồng bộ → Cầu Wingardium → Cầu rồi vực → Bục Flitwick → **BOSS: Cầu đũa phép quay** |
+| **04** | **Nhà kính Thảo dược** | Vườn cây cô Sprout | Quạt hắt hơi → Luống cây nhà → Gió rồi trống → Cầu rêu dài → Sương mù nhà kính (sương đuổi) → **BOSS: Nấm bật tung (máy bắn)** |
+| **05** | **Cầu thang Hogwarts** | Tháp cầu thang chuyển dịch | Bậc chồng vai → Chiếu nghỉ thủng → Tháp pháo đài (tháp 3 người) → Nhịp cầu thang → Bục chỉ ném tới → **BOSS: Hai pháo đài** |
+| **06** | **Nhà bếp gia tinh** | Lò nướng & Thớt gỗ | Thớt bập bênh (máy bắn) → Bí ngô lăn → Lò nướng bật tưng (2 người dậm) → Bí ngô trên trống → Giám Ngục vào bếp → **BOSS: Dây chuyền bắn** |
+| **07** | **Phòng Chứa Bí Mật** | Cống ngầm Slytherin | Mương rắn (rút dây) → Cửa rắn quay → Cống ngầm quay (rút dây + cánh quạt) → Bẫy đá đôi → Tượng Slytherin → **BOSS: Hàm Tử Xà** |
+| **08** | **Sân lâu đài Hogwarts** | Sân trường đại chiến | Giám Ngục ở cổng → Cầu bốn nhà → Máy bắn sân trường → Tháp đồng hồ → Hành lang bão (sương + rút dây) → **BOSS: Vớ Snitch bay** |
+
+> 💡 **Lưu ý:** Map V2 tắt *Standing Death* (thay thế bằng áp lực sương Giám Ngục và dây sờn), thời gian hồi sinh nhanh gọn (40 ticks). Toàn bộ 8 map cũ được bảo lưu trọn vẹn tại màn 09–16 với tên gọi `Cổ điển · …` (đầy đủ các cơ chế Hard Mode nguyên bản).
+
+---
 
 ## 🏰 Danh sách 8 Màn cổ điển (màn 09–16)
 
 | Màn | Tên bản đồ | Bối cảnh Hogwarts | Chướng ngại vật chính |
 |:---:|:-----------|:------------------|:----------------------|
-| **1** | **Phòng sinh hoạt chung** *(Common Room)* | Tháp Gryffindor ấm áp với lò sưởi | Tháp gối đệm vươn cao, quạt gió thổi tai, vực sàn gỗ 580px |
-| **2** | **Đại Sảnh Đường** *(Great Hall)* | Bàn tiệc 4 nhà dài bất tận | Sàn bơ trơn trượt, bàn tiệc bập bênh, bí ngô bowling lăn dồn dập |
-| **3** | **Lớp học Bùa chú** *(Charms)* | Giá sách phù thủy cao chót vót | Tháp sách đỉnh cao y=270, đệm lò xo bật tung, cuộn giấy băng chuyền |
-| **4** | **Nhà kính Thảo dược** *(Greenhouse)* | Vườn cây ma thuật của cô Sprout | Quạt thông gió giật mạnh, mương tưới cây rêu trơn, nấm nổ tung người |
-| **5** | **Cầu thang Hogwarts** *(Grand Staircase)* | Cầu thang dịch chuyển kỳ bí | **Vách tường 3 tầng chồng vai (140px)**, bậc thang chuyển dịch, cầu thang bập bênh |
-| **6** | **Nhà bếp gia tinh** *(Hogwarts Kitchen)* | Thiên đường ẩm thực của Dobby | Bơ đổ không phanh, nồi bí ngô đuổi đầu bếp, băng chuyền rửa chén |
-| **7** | **Phòng Chứa Bí Mật** *(Chamber of Secrets)* | Hầm ngầm cổ kính của Salazar Slytherin | **Vách tường tượng đá xếp tầng (140px)**, cánh quạt trần 4 lưỡi xoay tròn |
-| **8** | **Sân lâu đài Hogwarts** *(Courtyard)* | Sân vườn lâu đài dưới ánh trăng | **Tổng hợp bẫy:** Bão tuyết, bơ trượt, quạt trần, lò xo nảy qua hào sâu |
+| **09** | **Cổ điển · Phòng sinh hoạt chung** | Tháp Gryffindor | Tháp gối đệm vươn cao, quạt gió thổi tai, vực sàn gỗ 580px |
+| **10** | **Cổ điển · Đại Sảnh Đường** | Bàn tiệc 4 nhà | Sàn bơ trơn trượt, bàn tiệc bập bênh, bí ngô bowling lăn dồn dập |
+| **11** | **Cổ điển · Lớp học Bùa chú** | Giá sách phù thủy | Tháp sách đỉnh cao y=270, đệm lò xo bật tung, cuộn giấy băng chuyền |
+| **12** | **Cổ điển · Nhà kính Thảo dược** | Vườn cây ma thuật | Quạt thông gió giật mạnh, mương tưới cây rêu trơn, nấm nổ tung người |
+| **13** | **Cổ điển · Cầu thang Hogwarts** | Cầu thang chuyển dịch | **Vách tường 3 tầng chồng vai (140px)**, bậc thang chuyển dịch, cầu thang bập bênh |
+| **14** | **Cổ điển · Nhà bếp gia tinh** | Thiên đường ẩm thực | Bơ đổ không phanh, nồi bí ngô đuổi đầu bếp, băng chuyền rửa chén |
+| **15** | **Cổ điển · Phòng Chứa Bí Mật** | Hầm ngầm Slytherin | **Vách tường tượng đá xếp tầng (140px)**, cánh quạt trần 4 lưỡi xoay tròn |
+| **16** | **Cổ điển · Sân lâu đài Hogwarts** | Sân vườn lâu đài | **Tổng hợp bẫy:** Bão tuyết, bơ trượt, quạt trần, lò xo nảy qua hào sâu |
 
 ---
 
-## ⚙️ Bảng thông số kỹ thuật (HARD Mode Config)
+## ⚙️ Bảng thông số kỹ thuật (Game Engine Parameters)
 
+### 1. Thông số Kỹ thuật Map V2 (V2 Co-op Config):
+| Thông số | Giá trị | Ý nghĩa gameplay |
+|:---------|:-------:|:-----------------|
+| `tossGap` | `112px` | Độ rộng vực ném (nhảy đơn tối đa 94px, ném bay xa tới 125px) |
+| `window` | `20 ticks (~0.33s)` | Khoảng thời gian cho phép giữa các lần tiếp đất trên phiến trống |
+| `launchVy` | `-17` | Vận tốc bập bênh phóng người chơi lên cao ~175px |
+| `ropeFray` | `150 ticks (~2.5s)` | Giới hạn chịu lực khi đồng đội bị treo dưới vực trước khi đứt dây |
+| `fogSpeed` | `1.6 / 1.9 / 2.2` | Tốc độ di chuyển của sương Giám Ngục (theo số người ≤2 / ≤4 / ≤8) |
+| `shrinkRest / shrinkMax` | `80px / 120px` | Độ dài tự nhiên và độ dài căng cực đại trong vùng bùa rút dây |
+| `houseSpacing` | `160px` | Khoảng cách giữa 2 bục cùng màu nhà (phải có bạn ném mới tới) |
+| `blockHeight (stack2)` | `95px` | Chiều cao bục chồng vai 2 tầng |
+| `blockHeight (stack3)` | `140px` | Chiều cao bục tháp 3 tầng (tự hạ 95px khi phòng chỉ có 2 người) |
+| `blockHeight (toss)` | `115px` | Chiều cao bục chỉ có thể ném bạn mới lên được |
+| `blockHeight (cat)` | `160px` | Chiều cao bục bập bênh máy bắn |
+| `bonusSockPoints` | `+100 / +300` | +100đ mỗi chiếc vớ cất an toàn, +300đ thưởng đủ bộ |
+
+### 2. Thông số Kỹ thuật Chế độ Cổ điển (Classic HARD Mode Config):
 | Thông số | Giá trị | Ý nghĩa gameplay |
 |:---------|:-------:|:-----------------|
 | `gravity` | `0.85` | Trọng lực nặng, rơi nhanh và dứt khoát |
