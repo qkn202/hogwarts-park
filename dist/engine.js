@@ -241,7 +241,7 @@ const PARTS = {
         cur += 70 + 25;
       } else {
         plates.push({ x: cur, w: 60 });
-        cur += 60 + 60;
+        cur += 60 + 45;
       }
     }
     const gate = { x: cur + 10, w: 40 };
