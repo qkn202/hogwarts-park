@@ -1065,7 +1065,17 @@ function constrainRopes(room, solids) {
   const limits = (a, b) => {
     const mid = (a.x + b.x) / 2;
     const shrunk = (lv.shrinkZones || []).some(([z1, z2]) => mid >= z1 && mid <= z2);
-    return shrunk ? [V2.shrinkRest, V2.shrinkMax] : [HARD.ropeLength, HARD.ropeMax];
+    if (shrunk) return [V2.shrinkRest, V2.shrinkMax];
+    // In gaps/dangling: keep strict rest 140 to prevent void wipeouts and preserve gap sock grabs
+    if (a.dangling || b.dangling || a.y > 530 || b.y > 530) return [HARD.ropeLength, HARD.ropeMax];
+    // On elevated ledges/blocks (dy > 70): expand rope so drum plates on ledges have comfortable slack
+    const dy = Math.abs(a.y - b.y);
+    if (dy > 70) {
+      const rest = Math.max(HARD.ropeLength, Math.round(Math.hypot(110, dy)));
+      const max = Math.max(HARD.ropeMax, rest + 80);
+      return [rest, max];
+    }
+    return [HARD.ropeLength, HARD.ropeMax];
   };
 
   function move(p, dx, dy) {

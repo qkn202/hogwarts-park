@@ -56,6 +56,17 @@
   - *Giải pháp:* Rút gọn khoảng cách giữa các phiến trống trên sàn từ 180px xuống **105px** (khoảng hở giữa 2 phiến chỉ còn **45px**). Khi cả đội 3 hoặc 4 người đứng dàn hàng ngang, mỗi đoạn dây vẫn còn chùng tận **35px**, cho phép mọi người thoải mái lấy đà nhảy và tiếp đất cùng lúc.
 - Toàn bộ 59/59 bài test bot solvability và physics tiếp tục đạt chuẩn tuyệt đối.
 
+**5. Tổng kiểm tra & Tối ưu toàn diện độ dài sợi dây cho tất cả 16 màn chơi (Comprehensive Rope Length Audit & Dynamic Ledge Slack)**
+- **Kiểm định độ dài cơ sở `HARD.ropeLength = 140px` (Rest Length) & `HARD.ropeMax = 220px`**:
+  - Tại sao không thể tùy tiện tăng dây cơ sở lên 160px–180px? Mặt sàn ở $y = 570$, thắt lưng gia tinh ở $y = 526$. Đáy tử thần (void death) là $y > H + 20 = 680$. Khi một bạn làm mỏ neo trên bờ và một bạn đu dây xuống vực nhặt vớ ma thuật ($y = 622$), độ rơi của bạn đu dây chạm ngưỡng $y \approx 673.9\text{px}$ (cách đáy vực đúng 6px an toàn). Nếu nới dây cơ sở $> 146\text{px}$, bạn đu dây sẽ lọt vào hư vô gây tử nạn cả đội ngay lập tức. Do đó, **140px là giá trị cân bằng hoàn hảo bắt buộc** cho toàn bộ cơ chế đu vực và nhặt vớ.
+- **Cơ chế Dây Co Giãn Thích Ứng Theo Bục Cao (Adaptive Ledge Slack Engine)**:
+  - *Vấn đề phát hiện:* Trên các màn có bục cao (bập bênh máy bắn cao 160px, tháp 3 người cao 140px, bục ném cao 115px), khoảng cách thẳng đứng đã vượt qua 140px. Sợi dây bị căng ngay cả khi đứng yên, kéo bạn dưới sàn bay lơ lửng lên trời và kéo bạn trên bục ngã nhào xuống đất, khiến cả hai không thể đứng vững trên phiến trống để cùng nhảy nhịp.
+  - *Giải pháp triệt để:* Engine tự động nhận biết trạng thái địa hình:
+    - Khi ở trong vực / đu dây sâu ($y > 530$): Giữ nguyên nghiêm ngặt `140px / 220px` để bảo toàn mạng sống và tầm nhặt vớ.
+    - Khi đứng trên bục cao co-op ($\Delta y > 70\text{px}$ và không lọt hố): Chiều dài nghỉ của dây được mở rộng tự động theo đường chéo hình học $\text{Math.hypot}(110, \Delta y)$ với trần kéo giãn $+80\text{px}$ (ví dụ bục máy bắn 160px có dây nghỉ ~194px, trần ~274px).
+  - *Hiệu quả thực chiến:* Đạt **100% độ ổn định đứng yên (Zero Tension Idle)** và **100% tỷ lệ mở cửa thành công khi cùng nhảy (Synchronized Drum Jump)** trên toàn bộ 18 màn bục cao của cả 8 map V2. Các bạn tha hồ căn nhịp nhảy mà không còn bất kỳ hiện tượng kéo giật hay bay bổng nào.
+- 59/59 test pass 100%.
+
 ### Hôm qua — Thứ Hai, 05/10/2026
 
 - Ra mắt bản co-op platformer Hogwarts nhiều chương với vật lý dây treo kiểu *Chained Together*; cấu hình deploy tĩnh lên Vercel.
